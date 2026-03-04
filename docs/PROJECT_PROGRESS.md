@@ -226,10 +226,10 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | 1 | CreateTempEmailStep | ✅ 通过 | TalentMail 创建临时邮箱正常 |
 | 2 | BrowserSignupStep | ✅ 通过 | Patchright 填写 chatgpt.com 注册表单正常 |
 | 3 | WaitForVerificationCodeStep | ✅ 通过 | TalentMail 临时邮箱收到 OpenAI 验证邮件，正则提取 6 位验证码 |
-| 4 | BrowserVerifyEmailStep | ✅ 通过 | Patchright 输入验证码 + PKCE OAuth token 获取成功 |
+| 4 | BrowserVerifyEmailStep | ✅ 通过 | 验证码 + about-you + work-usage + personal-account + 提取 session token |
 | 5 | VerifyPhoneStep | ⏸️ 跳过 | skip_phone_verification=true |
-| 6 | SetPasswordStep | ⏳ 待测试 | Token exchange (auth code → access_token) |
-| 7 | SetProfileStep | ⏳ 待测试 | 设置用户名 |
+| 6 | SetPasswordStep | ⏸️ 跳过 | access_token 已从 browser session 获取，自动跳过 token exchange |
+| 7 | SetProfileStep | ⏸️ 跳过 | profile 已在浏览器 onboarding 中设置，自动跳过 |
 | 8 | UpgradePlusStep | ⏸️ 跳过 | skip_upgrade_plus=true |
 
 ### Step 3-4 验证通过记录 (2026-03-04) ✅
@@ -348,10 +348,12 @@ API Key (sk-xxx) + $5 额度 (3 个月) + 无需绑卡
 - [x] ~~Step 3 真实测试：OpenAI 验证邮件 → TalentMail 临时邮箱 → 提取验证码~~ (2026-03-04 通过)
 - [x] ~~Step 4 真实测试：Patchright 输入验证码 + PKCE OAuth token 获取~~ (2026-03-04 通过)
 - [x] ~~注册成功后自动保存账号到数据库~~ (status=registered, 2026-03-05)
-- [ ] Step 6-7 逐步验证 (token exchange + profile)
-- [ ] 完整注册流水线端到端成功
-- [ ] Platform 自动化：Patchright 登录 platform.openai.com + 自动创建 API Key
-- [ ] 多账号池吞吐优化：3 RPM/账号 × N 账号 round-robin
+- [x] ~~Step 6-7 条件跳过~~ (access_token 从 browser session 直接获取, 2026-03-05)
+- [x] ~~完整注册流水线链路打通~~ (Step 1-8 全部通过/跳过, 2026-03-05)
+- [x] ~~post-registration onboarding~~ (work-usage + personal-account + skip tour, 2026-03-05)
+- [ ] usage_limited 状态 + 70 次/天额度耗尽自动换号
+- [ ] 多账号池吞吐优化：70 req/账号/天 × N 账号 round-robin
+- [ ] 批量注册面板（数量 + 并发 + 进度 + 成功率）
 
 ### 高优先级（联调必需）
 - [x] ~~配置 TalentMail 云服务器地址到 settings.yaml~~ (已配置 mail.talenting.vip)
