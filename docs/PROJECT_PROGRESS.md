@@ -1,6 +1,6 @@
 # codex2api - 项目进度文档
 
-> 最后更新: 2026-03-04
+> 最后更新: 2026-03-05
 
 ## 项目概述
 
@@ -38,6 +38,11 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 │  /v1/*   OpenAI 兼容代理 (Bearer sk-xxx 鉴权)            │
 │  ├── /v1/models                                          │
 │  └── /v1/chat/completions (流式 SSE + 非流式)            │
+│                                                          │
+│  chat2api 转换层 (待实现):                                │
+│  ├── 安全令牌 Pipeline (VM→Req→PoW→Turnstile→Conduit)    │
+│  ├── OpenAI API ↔ backend-api 格式转换                   │
+│  └── chatgpt.com/backend-api/conversation 调用           │
 │                                                          │
 │  后台服务:                                                │
 │  ├── HealthChecker  (定时探活, 冷却恢复, 封禁)            │
@@ -108,6 +113,17 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | 协同机制 | `health_checker.py` | 401/403 不算健康失败, 交给 refresher |
 | 池过滤 | `account_pool.py` | 排除 expired/refreshing/invalid_grant 账号 |
 
+### P3.5 - usage_limited 自动轮换 (已完成, 2026-03-05)
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| mark_usage_limited | `account_pool.py` | 429 → usage_limited, cooldown 到次日 UTC 0:00 |
+| 内联恢复 | `account_pool.py` | acquire_account 检查 cooling + usage_limited 到期恢复 |
+| 429 检测 | `openai_proxy.py` | `_is_quota_error()` 识别 429/rate_limit/insufficient_quota |
+| 代理联动 | `openai_proxy.py` | list_models + chat_completions 429 → mark_usage_limited |
+| 健康检查恢复 | `health_checker.py` | usage_limited 到期自动恢复, 到期前不探活 |
+| 测试 | `test_account_health.py` + `test_health_checker.py` | 6 个新用例 |
+
 ### P4 - 注册自动化 (已完成)
 
 | 模块 | 文件 | 说明 |
@@ -145,13 +161,13 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | test_config_api.py | 2 | 配置读取(脱敏), 配置更新 |
 | test_logs_api.py | 3 | 日志查询, 过滤, 清空 |
 | test_openai_proxy.py | 5 | 无鉴权 401, 无效 token 401, models, chat, SSE |
-| test_account_health.py | 4 | 健康记录创建, 失败持久化, cooling 不选, banned |
-| test_health_checker.py | 3 | 探活成功, 失败冷却, cooling 恢复 |
+| test_account_health.py | 8 | 健康记录, 失败持久化, cooling 不选, banned, usage_limited CRUD/恢复/midnight |
+| test_health_checker.py | 5 | 探活成功, 失败冷却, cooling 恢复, usage_limited 恢复, usage_limited 不探活 |
 | test_auth.py | 4 | 登录成功/失败, me 有效/无效 |
 | test_token_refresher.py | 4 | 刷新成功, invalid_grant, 未过期跳过, 401 不计失败 |
 | test_registration.py | 4 | Pipeline 成功, 跳过电话, 保存账号, API 端点 |
 | test_devtools.py | 5 | 日志持久化, 订阅者, Pipeline 事件, 测试 API, 历史日志 |
-| **总计** | **43** | — |
+| **总计** | **49** | — |
 
 ---
 
@@ -180,11 +196,16 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
          │
          │ HTTPS
          ▼
-┌─────────────────────┐
-│  OpenAI API          │
-│  api.openai.com     │
-│  auth0.openai.com   │
-└─────────────────────┘
+┌─────────────────────────────────┐
+│  ChatGPT (注册 + API 调用)       │
+│                                 │
+│  chatgpt.com                    │
+│  ├── /api/auth/* (注册/登录)     │
+│  ├── /backend-api/conversation  │ ← chat2api 主调用端点
+│  └── /backend-anon/sentinel/*   │ ← 安全令牌获取
+│                                 │
+│  auth0.openai.com (OAuth 认证)  │
+└─────────────────────────────────┘
 ```
 
 - 后端本地运行，通过网络访问云端 TalentMail 和 OpenAI API
@@ -266,96 +287,107 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | OpenAI 注册流程 | `docs/openai-registration-flow.md` | OAuth 端点文档 |
 | 免费 API 调研 | `docs/PROJECT_PROGRESS.md#免费账号-api-调用方案调研-2026-03-05` | 免费账号 API 方案 |
 | 竞品分析 | `docs/COMPETITOR_ANALYSIS.md` | 朋友 codex2api 系统逆向分析 |
+| 纯 HTTP 注册调研 | `docs/HTTP_REGISTRATION_RESEARCH.md` | 10 步流程 + Turnstile 解法 + 开源参考 |
+| chat2api 架构设计 | `docs/CHAT2API_ARCHITECTURE.md` | backend-api 调用格式 + 安全令牌 + 实现路线图 |
 
 ---
 
-## 免费账号 API 调用方案调研 (2026-03-05)
+## API 调用方案调研 (2026-03-05, 修订版)
 
-### 关键发现：chatgpt.com 与 platform.openai.com 共享账号体系
+### 关键纠正：朋友的系统实际使用 ChatGPT backend-api
 
-chatgpt.com 注册的账号 **可以直接登录 platform.openai.com**，无需另外注册。
-这意味着注册流水线创建的账号可以直接获取 API Key，走标准 API 通道。
+> ⚠️ 之前的调研结论有误，已全面修正。详见 `docs/CHAT2API_ARCHITECTURE.md`
+
+#### 之前的错误假设
 
 ```
-chatgpt.com 注册 (已自动化, Patchright)
-    ↓ 同一个 email + password
-platform.openai.com 登录
-    ↓ 免费获得
-API Key (sk-xxx) + $5 额度 (3 个月) + 无需绑卡
-    ↓
-现有 api.openai.com/v1/chat/completions 代理直接可用 ✅
+❌ 注册免费账号 → 获取 sk-proj API Key → 调用 api.openai.com
+❌ 免费账号有 $5 额度 + 每天 ~70 次免费 API 配额
+❌ 不需要 backend-api 转换层
 ```
 
-### 免费 API Tier 可用模型与限制
+#### 实际情况（深度研究确认）
 
-| 模型 | TPM | RPM | RPD | 备注 |
-|------|-----|-----|-----|------|
-| **gpt-4.1** | 10,000 | 3 | 200 | 高性能文本 |
-| **gpt-4.1-mini** | 60,000 | 3 | 200 | 高吞吐 |
-| **gpt-4o** | 10,000 | 3 | 200 | 多模态 |
-| **gpt-4o-mini** | 60,000 | 3 | 200 | 低成本首选 |
-| gpt-3.5-turbo | 40,000 | 3 | 200 | 旧模型 |
-| whisper-1 | — | 3 | 200 | 语音识别 |
-| tts-1 | — | 3 | 200 | 语音合成 |
-| DALL-E 3 | — | 3 | 200 | 图像生成 |
-| text-embedding-3-* | — | 3 | 200 | 嵌入 |
+```
+✅ 注册免费 ChatGPT 账号 → 获取 session accessToken (JWT)
+✅ 用 accessToken 调用 chatgpt.com/backend-api/conversation
+✅ 将 backend-api 响应格式转换为 OpenAI API 兼容格式
+✅ "每天 ~70 次" 是 ChatGPT 网页版消息限额（5小时滚动窗口）
+```
 
-**$5 额度用 gpt-4o-mini 约可处理 330 万 tokens。**
+#### 证据
 
-官方文档称免费 Tier 不支持 GPT-5 系列，但**实测发现 Codex 模型可用**（见竞品分析）。
-免费账号每天约 **70 次请求额度**，额度用完状态变为 `usage_limited`。
-升级到 Tier 1 只需累计付费 $5，限制大幅提升（如 gpt-4o: 30,000 TPM）。
+1. **官方 API 免费试用积分已于 2025 年中完全停止发放**
+   - 免费账号只能 3 RPM 用 GPT-3.5-turbo
+   - sk-proj key 调用 gpt-4o-mini 等全部返回 `insufficient_quota`（已实测确认）
+2. **朋友系统名 "codex2api" = 把 ChatGPT Codex 访问转为 API**
+   - 使用 session accessToken，不是 sk-proj key
+   - 模型 gpt-5.3-codex 通过 backend-api 调用
+3. **所有开源同类项目（chat2api/ChatGPT-to-API/codex-lb）均使用 backend-api**
+   - 无任何项目用 sk-proj key + 免费账号 + 官方 API 成功运作
 
-### 最新 OpenAI API 模型一览 (2026.03)
+### API 调用验证结果 (2026-03-05)
 
-| 模型家族 | 模型 | 说明 | 免费可用 |
-|---------|------|------|---------|
-| GPT-5.2 | gpt-5.2, gpt-5.2-mini, gpt-5.2-nano | 最新旗舰 | ❌ 需付费 |
-| GPT-5.1 | gpt-5.1-codex, gpt-5.1-codex-max | Codex 优化 | ❌ 需付费 |
-| GPT-5 | gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-pro | 上代旗舰 | ❌ 需付费 |
-| GPT-4.1 | gpt-4.1, gpt-4.1-mini | 高吞吐 | ✅ 免费 |
-| GPT-4o | gpt-4o, gpt-4o-mini | 多模态 | ✅ 免费 |
-| O 系列 | o3, o3-pro, o4-mini | 推理模型 | ❌ 需付费 |
-| 旧模型 | gpt-3.5-turbo | 经典 | ✅ 免费 |
+用真实注册账号 `tmhgx3r3@talenting.vip` (free plan) 实测：
 
-### 技术方案（修订版）
+| 测试 | 方式 | 结果 | 结论 |
+|------|------|------|------|
+| 列出模型 | sk-proj Key → api.openai.com/v1/models | ✅ 101 个模型 | 能列但不能调 |
+| 调用对话 | sk-proj Key → chat/completions (7 个模型) | ❌ 全部 `insufficient_quota` | **免费积分已停发** |
+| 列出模型 | session JWT → api.openai.com/v1/models | ❌ `Missing scopes` | JWT 无 API 权限 |
+| backend-api | session JWT → chatgpt.com/backend-api | ❌ 403 Cloudflare | 需安全令牌绕过 |
 
-**无需 backend-api 转换层**，现有架构直接可用：
+### 正确架构：chat2api（ChatGPT → OpenAI API 格式转换）
 
-核心新增步骤：
-1. **用注册好的 chatgpt.com 账号登录 `platform.openai.com`**（Patchright 浏览器自动化）
-2. **自动创建 API Key**（浏览器自动化或 platform API）
-3. **保存 API Key 到 account_store**（替代 OAuth access_token）
-4. **现有代理链路直接工作**：Client → /v1/chat/completions → api.openai.com
+```
+注册 chatgpt.com → 获取 session accessToken (JWT)
+  → 调用 chatgpt.com/backend-api/conversation
+  → 需先获取 5 层安全令牌 (VM → Requirements → PoW → Turnstile → Conduit)
+  → 将 backend-api SSE 响应转换为 /v1/chat/completions 格式
+  → AccountPool round-robin 多账号轮换
+  → 账号消息限额用完 → usage_limited → 5h 窗口后恢复
+```
 
-### ~~旧方案：ChatGPT backend-api（已废弃）~~
+### 实现路线图
 
-~~之前考虑用 `chatgpt.com/backend-api/conversation` + access_token，~~
-~~但发现同一账号可直接登录 platform.openai.com 获取 API Key，方案大幅简化。~~
+| Phase | 目标 | 说明 |
+|-------|------|------|
+| **Phase 1** | 单账号跑通 | 接入 chat2api/realasfngl 开源库，验证 backend-api 调用 |
+| **Phase 2** | 账号池集成 | 扩展 account_store 存 session token，AccountPool 适配 |
+| **Phase 3** | 规模化 | 批量注册、纯 HTTP 注册、安全令牌缓存 |
 
-### 风险
+### 待实现
 
-- 自动化登录 platform.openai.com 可能有 Cloudflare / reCAPTCHA
-- 免费额度 3 个月过期，需定期注册新账号轮换
-- 每账号 3 RPM / 200 RPD，需多账号池 round-robin 提升吞吐
-- $5 额度用完后 API Key 可能失效
+1. ~~自动化 platform.openai.com 获取 API Key~~ ← 废弃，改用 backend-api 方案
+2. 接入 chat2api 或 realasfngl/ChatGPT 库实现安全令牌 + backend-api 调用
+3. 实现 OpenAI API → backend-api 请求格式转换
+4. 实现 backend-api SSE → OpenAI API SSE 响应格式转换
+5. 扩展 account_store 存储 session accessToken
+6. 测试单账号完整链路：注册 → 获取 token → backend-api 调用 → 格式转换返回
+
+### 详细设计
+
+详见 `docs/CHAT2API_ARCHITECTURE.md`
 
 ---
 
 ## 待完成事项
 
-### 高优先级（当前）
+### 高优先级（当前）— chat2api 转换层
+- [ ] **接入 chat2api 开源库**，实现 backend-api 安全令牌 + 调用
+- [ ] **格式转换层**：OpenAI API ↔ backend-api 请求/响应转换
+- [ ] **扩展 account_store** 存储 session accessToken + cookies
+- [ ] **单账号端到端验证**：注册 → 获取 token → backend-api → 格式转换
+- [ ] 批量注册面板（数量 + 并发 + 进度 + 成功率）
+
+### 高优先级（已完成）
 - [x] ~~Step 3 真实测试：OpenAI 验证邮件 → TalentMail 临时邮箱 → 提取验证码~~ (2026-03-04 通过)
 - [x] ~~Step 4 真实测试：Patchright 输入验证码 + PKCE OAuth token 获取~~ (2026-03-04 通过)
 - [x] ~~注册成功后自动保存账号到数据库~~ (status=registered, 2026-03-05)
 - [x] ~~Step 6-7 条件跳过~~ (access_token 从 browser session 直接获取, 2026-03-05)
 - [x] ~~完整注册流水线链路打通~~ (Step 1-8 全部通过/跳过, 2026-03-05)
 - [x] ~~post-registration onboarding~~ (work-usage + personal-account + skip tour, 2026-03-05)
-- [ ] usage_limited 状态 + 70 次/天额度耗尽自动换号
-- [ ] 多账号池吞吐优化：70 req/账号/天 × N 账号 round-robin
-- [ ] 批量注册面板（数量 + 并发 + 进度 + 成功率）
-
-### 高优先级（联调必需）
+- [x] ~~usage_limited 状态 + 消息限额耗尽自动换号~~ (2026-03-05)
 - [x] ~~配置 TalentMail 云服务器地址到 settings.yaml~~ (已配置 mail.talenting.vip)
 - [x] ~~填入真实 OAuth2 参数~~ (client_id 已配置)
 - [x] ~~Turnstile token 获取方案~~ (Patchright 浏览器自动化绕过)
@@ -365,10 +397,12 @@ API Key (sk-xxx) + $5 额度 (3 个月) + 无需绑卡
 - [x] ~~前端实时日志查看~~ (WebSocket 推送)
 
 ### 中优先级
+- [ ] 仪表盘增强（TPM + 成功率 + 趋势图）
+- [ ] 账号表增强（请求数、Token 过期、错误信息、usage_limited 状态显示）
 - [ ] 注册任务队列 (支持批量并发注册)
+- [ ] 纯 HTTP 注册（提升注册速度到 100+/min）
 - [ ] 管理员密码 bcrypt 加密 (当前明文)
 - [ ] WebSocket 断线自动重连
-- [ ] DKIM 密钥持久化（已存在则跳过生成）
 
 ### 低优先级
 - [ ] Alembic 数据库迁移管理

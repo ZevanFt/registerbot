@@ -90,6 +90,22 @@ def _extract_error(status_code: int, body: Any) -> tuple[str, str, str]:
     return fallback_message, "upstream_error", str(status_code)
 
 
+def _is_quota_error(status_code: int, body: Any) -> bool:
+    """Detect daily quota exhaustion (429 rate_limit / insufficient_quota)."""
+    if status_code != 429:
+        return False
+    if isinstance(body, dict):
+        error = body.get("error", {})
+        if isinstance(error, dict):
+            code = str(error.get("code", ""))
+            error_type = str(error.get("type", ""))
+            if code in {"rate_limit_exceeded", "insufficient_quota"}:
+                return True
+            if error_type == "insufficient_quota":
+                return True
+    return True  # 429 without details → treat as quota limit
+
+
 def _record_usage(
     token_id: int,
     account_id: int | None,
@@ -127,13 +143,16 @@ async def list_models(_: TokenContext = Depends(require_bearer_token)) -> JSONRe
             pool.mark_failure(int(account["id"]), "timeout")
         raise OpenAIProxyException(504, "Upstream timeout", "timeout_error", "upstream_timeout") from exc
     except httpx.HTTPStatusError as exc:
-        if account is not None:
-            pool.mark_failure(int(account["id"]), f"status_{exc.response.status_code}")
         body: dict[str, Any] | str
         try:
             body = exc.response.json()
         except ValueError:
             body = {}
+        if account is not None:
+            if _is_quota_error(exc.response.status_code, body):
+                pool.mark_usage_limited(int(account["id"]))
+            else:
+                pool.mark_failure(int(account["id"]), f"status_{exc.response.status_code}")
         message, error_type, code = _extract_error(exc.response.status_code, body)
         raise OpenAIProxyException(exc.response.status_code, message, error_type, code) from exc
     except httpx.RequestError as exc:
@@ -197,7 +216,10 @@ async def chat_completions(
             raw_payload,
         )
         if status_code >= 400:
-            pool.mark_failure(int(account["id"]), f"status_{status_code}")
+            if _is_quota_error(status_code, body):
+                pool.mark_usage_limited(int(account["id"]))
+            else:
+                pool.mark_failure(int(account["id"]), f"status_{status_code}")
             message, error_type, code = _extract_error(status_code, body)
             _record_usage(
                 token_id=token.token_id,

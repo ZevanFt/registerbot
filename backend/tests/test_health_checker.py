@@ -91,5 +91,48 @@ class HealthCheckerTests(unittest.TestCase):
         self.assertEqual(health["last_failure_reason"], "boom")
 
 
+    def test_recovery_from_usage_limited(self) -> None:
+        account_id = self._create_active_account()
+        past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        self.store.update_health(
+            account_id,
+            runtime_status="usage_limited",
+            cooldown_until=past,
+            last_failure_reason="daily_quota_exhausted",
+        )
+        chat_client = Mock()
+        chat_client.list_models = AsyncMock(return_value={"object": "list", "data": []})
+        checker = HealthChecker(self.store, chat_client, cooldown_seconds=60, failure_threshold=3)
+
+        asyncio.run(checker.check_once())
+
+        health = self.store.get_health(account_id)
+        self.assertIsNotNone(health)
+        assert health is not None
+        self.assertEqual(health["runtime_status"], "active")
+        self.assertEqual(health["consecutive_failures"], 0)
+
+    def test_usage_limited_not_probed_before_cooldown(self) -> None:
+        account_id = self._create_active_account()
+        future = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
+        self.store.update_health(
+            account_id,
+            runtime_status="usage_limited",
+            cooldown_until=future,
+            last_failure_reason="daily_quota_exhausted",
+        )
+        chat_client = Mock()
+        chat_client.list_models = AsyncMock(return_value={"object": "list", "data": []})
+        checker = HealthChecker(self.store, chat_client, cooldown_seconds=60, failure_threshold=3)
+
+        asyncio.run(checker.check_once())
+
+        # Should NOT have been probed (still usage_limited)
+        chat_client.list_models.assert_not_called()
+        health = self.store.get_health(account_id)
+        assert health is not None
+        self.assertEqual(health["runtime_status"], "usage_limited")
+
+
 if __name__ == "__main__":
     unittest.main()

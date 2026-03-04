@@ -46,7 +46,7 @@ class HealthChecker:
             runtime_status = str(account.get("runtime_status", "active"))
             cooldown_until_raw = account.get("cooldown_until")
             cooldown_until = self._parse_iso(cooldown_until_raw)
-            if runtime_status == "cooling" and cooldown_until is not None and cooldown_until <= now:
+            if runtime_status in {"cooling", "usage_limited"} and cooldown_until is not None and cooldown_until <= now:
                 self.account_store.update_health(
                     account_id,
                     runtime_status="active",
@@ -54,7 +54,7 @@ class HealthChecker:
                     cooldown_until=None,
                     last_check_at=now_iso,
                 )
-                self._logger.info("account_recovered", account_id=account_id)
+                self._logger.info("account_recovered", account_id=account_id, from_status=runtime_status)
 
         refreshed = self.account_store.list_accounts_with_health()
         active_accounts = [

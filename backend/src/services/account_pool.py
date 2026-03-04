@@ -24,8 +24,8 @@ class AccountPool:
         self._lock = threading.Lock()
         self._logger = structlog.get_logger(self.__class__.__name__)
 
-    def _recover_cooling(self, account: dict[str, Any]) -> bool:
-        """Check if a cooling account's cooldown has expired and recover it inline."""
+    def _try_recover(self, account: dict[str, Any]) -> bool:
+        """Check if a cooling/usage_limited account's cooldown has expired and recover it."""
         cooldown_raw = account.get("cooldown_until")
         if not cooldown_raw or not isinstance(cooldown_raw, str):
             return False
@@ -37,6 +37,7 @@ class AccountPool:
             return False
         if cooldown_until <= datetime.now(timezone.utc):
             account_id = int(account["id"])
+            status = account.get("runtime_status", "cooling")
             self.account_store.ensure_health_record(account_id)
             self.account_store.update_health(
                 account_id,
@@ -44,7 +45,7 @@ class AccountPool:
                 consecutive_failures=0,
                 cooldown_until=None,
             )
-            self._logger.info("account_recovered_inline", account_id=account_id)
+            self._logger.info("account_recovered_inline", account_id=account_id, from_status=status)
             return True
         return False
 
@@ -52,10 +53,10 @@ class AccountPool:
         with self._lock:
             all_accounts = self.account_store.list_accounts_with_health()
 
-            # Inline-recover cooling accounts whose cooldown has expired
+            # Inline-recover cooling/usage_limited accounts whose cooldown has expired
             for account in all_accounts:
-                if account.get("runtime_status") == "cooling":
-                    if self._recover_cooling(account):
+                if account.get("runtime_status") in {"cooling", "usage_limited"}:
+                    if self._try_recover(account):
                         account["runtime_status"] = "active"
 
             accounts = [
@@ -117,4 +118,23 @@ class AccountPool:
             fail_count=fail_count,
             runtime_status=runtime_status,
             cooldown_until=cooldown_until,
+        )
+
+    def mark_usage_limited(self, account_id: int) -> None:
+        """Mark account as usage_limited with cooldown until next UTC midnight."""
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            self.account_store.ensure_health_record(account_id)
+            self.account_store.update_health(
+                account_id,
+                runtime_status="usage_limited",
+                cooldown_until=tomorrow.isoformat(),
+                last_failure_at=now.isoformat(),
+                last_failure_reason="daily_quota_exhausted",
+            )
+        self._logger.warning(
+            "account_usage_limited",
+            account_id=account_id,
+            cooldown_until=tomorrow.isoformat(),
         )

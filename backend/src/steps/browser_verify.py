@@ -198,19 +198,98 @@ class BrowserVerifyEmailStep(Step):
 
                 await asyncio.sleep(0.5)
 
-                # Fill Birthday — masked date input (MM/DD/YYYY segments).
-                # Tab from name field to birthday, select all, type digits only.
-                birthday_digits = birthday_str.replace("/", "")  # "01151995"
+                # Fill Birthday — 3 dropdown selects (Month / Day / Year).
+                month_names = [
+                    "", "January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December",
+                ]
+                month_label = month_names[birth_month]
+                birthday_filled = False
+
+                # Strategy 1: Native <select> elements inside Birthday fieldset
                 try:
-                    await page.keyboard.press("Tab")
-                    await asyncio.sleep(0.5)
-                    await page.keyboard.press("Control+a")
-                    await asyncio.sleep(0.2)
-                    await page.keyboard.type(birthday_digits, delay=100)
-                    await asyncio.sleep(0.3)
-                    logger.info("about_you_birthday_filled", birthday=birthday_str)
+                    selects = page.locator("select:visible")
+                    select_count = await selects.count()
+                    if select_count >= 3:
+                        # Month select: try by label/value
+                        month_sel = selects.nth(0)
+                        await month_sel.select_option(label=month_label)
+                        await asyncio.sleep(0.3)
+                        # Day select
+                        day_sel = selects.nth(1)
+                        await day_sel.select_option(value=str(birth_day))
+                        await asyncio.sleep(0.3)
+                        # Year select
+                        year_sel = selects.nth(2)
+                        await year_sel.select_option(value=str(birth_year))
+                        await asyncio.sleep(0.3)
+                        birthday_filled = True
+                        logger.info(
+                            "about_you_birthday_filled",
+                            mode="select_option",
+                            birthday=f"{month_label} {birth_day}, {birth_year}",
+                        )
                 except Exception:
-                    logger.warning("about_you_birthday_keyboard_failed", exc_info=True)
+                    logger.debug("about_you_birthday_select_option_failed", exc_info=True)
+
+                # Strategy 2: Click dropdown and pick option text
+                if not birthday_filled:
+                    try:
+                        birthday_group = page.locator("fieldset, [data-testid*='birthday'], .birthday")
+                        dropdowns = birthday_group.locator("select, [role='listbox'], [role='combobox']")
+                        dd_count = await dropdowns.count()
+                        if dd_count >= 3:
+                            await dropdowns.nth(0).select_option(label=month_label)
+                            await asyncio.sleep(0.2)
+                            await dropdowns.nth(1).select_option(value=str(birth_day))
+                            await asyncio.sleep(0.2)
+                            await dropdowns.nth(2).select_option(value=str(birth_year))
+                            birthday_filled = True
+                            logger.info(
+                                "about_you_birthday_filled",
+                                mode="fieldset_select",
+                                birthday=f"{month_label} {birth_day}, {birth_year}",
+                            )
+                    except Exception:
+                        logger.debug("about_you_birthday_fieldset_failed", exc_info=True)
+
+                # Strategy 3: JavaScript fallback — set all select values directly
+                if not birthday_filled:
+                    try:
+                        await page.evaluate(
+                            """([month, day, year]) => {
+                                const selects = document.querySelectorAll('select');
+                                if (selects.length >= 3) {
+                                    const setVal = (sel, val) => {
+                                        const nativeSetter = Object.getOwnPropertyDescriptor(
+                                            window.HTMLSelectElement.prototype, 'value'
+                                        ).set;
+                                        nativeSetter.call(sel, val);
+                                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                                    };
+                                    // Find month by matching option text
+                                    for (const opt of selects[0].options) {
+                                        if (opt.text.toLowerCase().startsWith(month.toLowerCase().slice(0,3))) {
+                                            setVal(selects[0], opt.value);
+                                            break;
+                                        }
+                                    }
+                                    setVal(selects[1], String(day));
+                                    setVal(selects[2], String(year));
+                                    return true;
+                                }
+                                return false;
+                            }""",
+                            [month_label, birth_day, birth_year],
+                        )
+                        birthday_filled = True
+                        logger.info(
+                            "about_you_birthday_filled",
+                            mode="js_fallback",
+                            birthday=f"{month_label} {birth_day}, {birth_year}",
+                        )
+                    except Exception:
+                        logger.warning("about_you_birthday_all_strategies_failed", exc_info=True)
 
                 await asyncio.sleep(1)
 

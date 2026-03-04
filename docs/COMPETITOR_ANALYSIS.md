@@ -52,7 +52,7 @@
 | 并发能力 | 50+ | 1（受浏览器限制）|
 | Turnstile | Capsolver（付费） | Patchright（免费）|
 | 邮件服务 | RokMail | TalentMail（自建）|
-| 注册后处理 | 填生日 + onboarding | 尚未实现 |
+| 注册后处理 | 填生日 + onboarding | ✅ 已实现 (about-you + work-usage + personal + skip tour) |
 
 ---
 
@@ -69,14 +69,17 @@
 | gpt-5.1-codex | 15 | 238 | 292 | 2.4Kms |
 | gpt-5-codex | 15 | 260 | 260 | 1.9Kms |
 
-**关键发现**：免费账号不仅能用 gpt-4o-mini，还能用最新的 Codex 系列模型！
-之前的调研说免费 Tier 不支持 GPT-5 系列，但实际上 Codex 模型似乎走的是不同的访问路径。
+**关键发现**：朋友通过 `chatgpt.com/backend-api/conversation` 调用这些模型（chat2api 架构），
+不是通过官方 API (`api.openai.com`)。免费 ChatGPT 账号可通过网页版访问 Codex 模型（限时促销）。
 
-### 免费额度
+### 免费额度（二次修订理解，2026-03-05）
 
-- 免费账号每天约 **70 次请求额度**（截图实证：请求数=70 后变为 usage_limited）
-- 账号用完额度后状态变为 `usage_limited`（截图显示："额度已用尽"）
-- 需要大量账号轮换来维持吞吐（朋友用 757 个活跃账号）
+- **~70 次/天是 ChatGPT 网页版消息限额**（5 小时滚动窗口），不是官方 API 的配额
+- **官方 API (api.openai.com) 免费积分已于 2025 年中停发**，免费账号只有 3 RPM GPT-3.5
+- 朋友的系统是 **chat2api 架构**：用 session accessToken 调用 backend-api，再转换为 API 格式
+- usage_limited → 窗口恢复后自动 active（账号是长期资产）
+- 757 活跃账号分散使用 = 高吞吐
+- Codex 免费访问是**限时促销**，未来可能收回
 
 ---
 
@@ -163,7 +166,7 @@
                            ↘ abandoned
 ```
 
-**缺少**：`usage_limited` 状态（最关键的免费账号状态）
+**已实现**：`usage_limited` 状态 (2026-03-05) — 429 自动标记, cooldown 到次日 UTC 0:00, 自动恢复
 
 ---
 
@@ -181,11 +184,11 @@
 ## 7. 下一步行动建议
 
 ### 短期（利用现有架构）
-1. 新增 `usage_limited` 账号状态
+1. ~~新增 `usage_limited` 账号状态~~ ✅ (2026-03-05)
 2. 仪表盘增加 TPM + 成功率指标
 3. 模型排行表增加输入/输出/延迟列
 4. 账号表增加请求数、Token 过期、错误信息列
-5. 注册后补全流程：填生日 → work usage → personal account → onboarding
+5. ~~注册后补全流程：填生日 → work usage → personal account → onboarding~~ ✅ (2026-03-05)
 
 ### 中期（提升注册效率）
 1. 批量注册面板：数量 + 并发 + 进度 + 成功率
