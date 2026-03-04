@@ -264,7 +264,8 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | 部署指南 | `docs/DEPLOYMENT_GUIDE.md` | 生产环境部署 |
 | 集成指南 | `docs/INTEGRATION_GUIDE.md` | 第三方集成 |
 | OpenAI 注册流程 | `docs/openai-registration-flow.md` | OAuth 端点文档 |
-| Backend-API 调研 | `docs/PROJECT_PROGRESS.md#免费账号-api-调用方案调研-2026-03-05` | 免费账号 API 方案 |
+| 免费 API 调研 | `docs/PROJECT_PROGRESS.md#免费账号-api-调用方案调研-2026-03-05` | 免费账号 API 方案 |
+| 竞品分析 | `docs/COMPETITOR_ANALYSIS.md` | 朋友 codex2api 系统逆向分析 |
 
 ---
 
@@ -301,7 +302,8 @@ API Key (sk-xxx) + $5 额度 (3 个月) + 无需绑卡
 
 **$5 额度用 gpt-4o-mini 约可处理 330 万 tokens。**
 
-免费 Tier **不支持**的模型：GPT-5/5.1/5.2 系列、o4-mini、gpt-5-codex 等最新旗舰模型。
+官方文档称免费 Tier 不支持 GPT-5 系列，但**实测发现 Codex 模型可用**（见竞品分析）。
+免费账号每天约 **70 次请求额度**，额度用完状态变为 `usage_limited`。
 升级到 Tier 1 只需累计付费 $5，限制大幅提升（如 gpt-4o: 30,000 TPM）。
 
 ### 最新 OpenAI API 模型一览 (2026.03)
