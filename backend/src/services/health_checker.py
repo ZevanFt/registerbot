@@ -20,12 +20,14 @@ class HealthChecker:
         interval: int = 30,
         cooldown_seconds: int = 60,
         failure_threshold: int = 3,
+        skip_probe: bool = False,
     ) -> None:
         self.account_store = account_store
         self.chat_client = chat_client
         self.interval = interval
         self.cooldown_seconds = cooldown_seconds
         self.failure_threshold = failure_threshold
+        self.skip_probe = skip_probe
         self._logger = structlog.get_logger(self.__class__.__name__)
 
     async def run_forever(self) -> None:
@@ -63,6 +65,10 @@ class HealthChecker:
             if account.get("runtime_status") == "active" and account.get("openai_token")
             and str(account.get("token_status") or "unknown") in {"valid", "expiring", "unknown"}
         ]
+
+        if self.skip_probe:
+            self._logger.debug("health_check_probe_skipped", reason="chat2api_mode")
+            return
 
         for account in active_accounts:
             account_id = int(account["id"])

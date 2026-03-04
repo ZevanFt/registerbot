@@ -44,12 +44,14 @@ async def lifespan(app: FastAPI):
         stream_timeout=settings.openai.stream_timeout_seconds,
         proxy=openai_proxy,
     )
+    is_chat2api = "localhost" in settings.openai.base_url or "127.0.0.1" in settings.openai.base_url
     checker = HealthChecker(
         account_store=account_store,
         chat_client=chat_client,
         interval=settings.proxy.health_check_interval_seconds,
         cooldown_seconds=settings.proxy.cooldown_seconds,
         failure_threshold=settings.proxy.failure_threshold,
+        skip_probe=is_chat2api,
     )
     tasks: list[asyncio.Task[None]] = []
     checker_task = asyncio.create_task(checker.run_forever())

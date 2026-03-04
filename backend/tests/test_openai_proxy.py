@@ -77,18 +77,15 @@ class OpenAIProxyTests(unittest.TestCase):
         token = self._create_token()
         self._create_account()
 
-        fake_client = Mock()
-        fake_client.list_models = AsyncMock(
-            return_value={"object": "list", "data": [{"id": "gpt-4.1-mini", "object": "model"}]}
-        )
-
-        with patch("api.openai_proxy._build_chat_client", return_value=fake_client):
-            response = self.client.get("/v1/models", headers={"Authorization": f"Bearer {token}"})
+        response = self.client.get("/v1/models", headers={"Authorization": f"Bearer {token}"})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["object"], "list")
-        self.assertEqual(payload["data"][0]["id"], "gpt-4.1-mini")
+        self.assertGreater(len(payload["data"]), 0)
+        # In chat2api mode (localhost base_url), returns static model list
+        model_ids = [m["id"] for m in payload["data"]]
+        self.assertIn("gpt-4o-mini", model_ids)
 
     def test_chat_completions_non_stream(self) -> None:
         token = self._create_token()

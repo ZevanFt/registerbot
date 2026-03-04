@@ -69,9 +69,14 @@ def _build_account_pool() -> AccountPool:
 
 def _build_chat_client() -> OpenAIChatClient:
     settings = load_settings()
-    proxy = settings.network.openai_proxy or settings.network.http_proxy
+    base_url = settings.openai.base_url
+    # No proxy needed for local chat2api
+    if "localhost" in base_url or "127.0.0.1" in base_url:
+        proxy = ""
+    else:
+        proxy = settings.network.openai_proxy or settings.network.http_proxy
     return OpenAIChatClient(
-        base_url=settings.openai.base_url,
+        base_url=base_url,
         timeout=settings.openai.timeout_seconds,
         stream_timeout=settings.openai.stream_timeout_seconds,
         proxy=proxy,
@@ -127,8 +132,35 @@ def _record_usage(
     )
 
 
+_CHAT2API_MODELS = [
+    "gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo",
+    "o1-preview", "o1-mini", "o3-mini",
+    "gpt-5.3-codex", "gpt-5-codex-mini", "gpt-5.2-codex",
+    "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5-codex",
+]
+
+
+def _static_models_response() -> dict[str, Any]:
+    """Return a static model list for chat2api backend (no /v1/models support)."""
+    import time
+
+    return {
+        "object": "list",
+        "data": [
+            {"id": m, "object": "model", "created": int(time.time()), "owned_by": "openai"}
+            for m in _CHAT2API_MODELS
+        ],
+    }
+
+
 @router.get("/v1/models")
 async def list_models(_: TokenContext = Depends(require_bearer_token)) -> JSONResponse:
+    settings = load_settings()
+
+    # chat2api backend doesn't support /v1/models — return static list
+    if "localhost" in settings.openai.base_url or "127.0.0.1" in settings.openai.base_url:
+        return JSONResponse(status_code=200, content=_static_models_response())
+
     pool = _build_account_pool()
     account: dict[str, Any] | None = None
     try:
