@@ -1,0 +1,78 @@
+"""Tests for dashboard and accounts FastAPI endpoints."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+
+from fastapi.testclient import TestClient
+
+from app import app
+from src.middleware.auth import AdminContext, require_admin_token
+
+
+class DashboardApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self._old_env = {
+            "REGISTER_BOT_STORAGE__DB_PATH": os.environ.get("REGISTER_BOT_STORAGE__DB_PATH"),
+            "REGISTER_BOT_STORAGE__ENCRYPTION_KEY": os.environ.get("REGISTER_BOT_STORAGE__ENCRYPTION_KEY"),
+        }
+        os.environ["REGISTER_BOT_STORAGE__DB_PATH"] = f"{self._tmp_dir.name}/accounts.db"
+        os.environ["REGISTER_BOT_STORAGE__ENCRYPTION_KEY"] = "test-key-1234567890"
+        app.dependency_overrides[require_admin_token] = lambda: AdminContext(username="test-admin")
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        for key, value in self._old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        app.dependency_overrides.pop(require_admin_token, None)
+        self._tmp_dir.cleanup()
+
+    def test_dashboard_stats_shape(self) -> None:
+        response = self.client.get("/api/dashboard/stats")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("accounts", payload)
+        self.assertIn("usage", payload)
+        self.assertIn("models", payload)
+        self.assertIn("service", payload)
+        self.assertEqual(payload["accounts"]["total"], 0)
+        self.assertEqual(payload["usage"]["today_requests"], 0)
+        self.assertEqual(payload["service"]["schedule_mode"], "round-robin")
+
+    def test_accounts_crud(self) -> None:
+        create_response = self.client.post(
+            "/api/accounts",
+            json={"email": "a@example.com", "password": "secret", "plan": "free", "status": "active"},
+        )
+        self.assertEqual(create_response.status_code, 201)
+        created = create_response.json()
+        self.assertEqual(created["email"], "a@example.com")
+        self.assertEqual(created["status"], "active")
+
+        list_response = self.client.get("/api/accounts")
+        self.assertEqual(list_response.status_code, 200)
+        accounts = list_response.json()
+        self.assertEqual(len(accounts), 1)
+        account_id = accounts[0]["id"]
+
+        patch_response = self.client.patch(f"/api/accounts/{account_id}", json={"status": "banned"})
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.json()["status"], "banned")
+
+        delete_response = self.client.delete(f"/api/accounts/{account_id}")
+        self.assertEqual(delete_response.status_code, 204)
+
+        list_after_delete = self.client.get("/api/accounts")
+        self.assertEqual(list_after_delete.status_code, 200)
+        self.assertEqual(list_after_delete.json(), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

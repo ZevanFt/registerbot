@@ -1,0 +1,12 @@
+talentmail:
+  base_url: 'http://localhost/api'
+  email: 'admin@talenting.test'
+  password: ''
+openai:
+  register_url: 'https://chat.openai.com'
+storage:
+  db_path: 'data/accounts.db'
+  encryption_key: ''
+logging:
+  level: 'INFO'
+  format: 'json'

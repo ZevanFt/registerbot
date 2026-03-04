@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: rgb(248 250 252);
+    color: rgb(15 23 42);
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .dark body,
+  body.dark,
+  :root.dark body {
+    background-color: rgb(15 23 42);
+    color: rgb(226 232 240);
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Sidebar scrollbar — thin, auto-hide */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.sidebar-scroll:hover {
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+
+:root.dark .sidebar-scroll:hover {
+  scrollbar-color: rgb(71 85 105) transparent;
+}
+
+/* Webkit (Chrome / Safari / Edge) */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgb(203 213 225);
+}
+
+:root.dark .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105);
+}
