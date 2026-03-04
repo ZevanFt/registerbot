@@ -25,6 +25,15 @@ class SetProfileStep(Step):
         if not context.access_token:
             return StepResult(success=False, error="access_token missing in context")
 
+        # If token came from browser session, profile was already set during onboarding
+        if context.get("registered"):
+            self._logger.info("profile_skip", reason="profile set during browser onboarding")
+            return StepResult(
+                success=True,
+                skip_reason="profile already set during browser onboarding",
+                data={},
+            )
+
         client = OpenAIRegistrationClient(
             auth_url=settings.openai.auth_url,
             oauth_client_id=settings.openai.oauth_client_id,

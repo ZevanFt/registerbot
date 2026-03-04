@@ -23,6 +23,15 @@ class SetPasswordStep(Step):
         if settings is None:
             return StepResult(success=False, error="Settings missing in context metadata")
 
+        # If access_token was already extracted (e.g. from browser session), skip token exchange
+        if context.access_token:
+            self._logger.info("token_exchange_skipped", reason="access_token already present")
+            return StepResult(
+                success=True,
+                skip_reason="access_token already available from browser session",
+                data={},
+            )
+
         authorization_code = str(context.get("authorization_code", ""))
         if not authorization_code:
             return StepResult(success=False, error="authorization_code missing in context")

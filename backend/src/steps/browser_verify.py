@@ -255,44 +255,134 @@ class BrowserVerifyEmailStep(Step):
                     pass
 
             # ============================================================
-            # Phase 2: Handle onboarding page and confirm registration.
-            # After about-you, ChatGPT shows "What brings you to ChatGPT?"
-            # onboarding page. Click Skip to dismiss it.
+            # Phase 2: Handle onboarding pages after about-you.
+            # OpenAI may show: "work usage" → "personal account" → tour.
             # ============================================================
 
             current_url = page.url
-            # Handle onboarding if present (chatgpt.com with questionnaire)
+
+            # Handle "What will you use OpenAI for?" (work usage page)
             try:
-                skip_btn = page.locator(
-                    'button:has-text("Skip"), '
-                    'a:has-text("Skip")'
+                work_usage_options = page.locator(
+                    'button:has-text("I\'m exploring personal use"), '
+                    'button:has-text("Personal"), '
+                    'div[role="option"]:has-text("Personal"), '
+                    'label:has-text("Personal")'
                 )
-                if await skip_btn.count() > 0:
-                    await skip_btn.first.click()
-                    logger.info("onboarding_skipped")
+                if await work_usage_options.count() > 0:
+                    await work_usage_options.first.click()
+                    logger.info("work_usage_selected", choice="personal")
+                    await asyncio.sleep(2)
+
+                    # Click continue/next after selection
+                    for sel in ['button:has-text("Continue")', 'button[type="submit"]']:
+                        try:
+                            btn = page.locator(sel).first
+                            if await btn.is_visible():
+                                await btn.click()
+                                break
+                        except Exception:
+                            continue
                     await asyncio.sleep(3)
             except Exception:
                 pass
+
+            # Handle "personal account" selection
+            try:
+                personal_options = page.locator(
+                    'button:has-text("Personal account"), '
+                    'button:has-text("Stay on free"), '
+                    'button:has-text("personal"), '
+                    'div[role="option"]:has-text("Personal")'
+                )
+                if await personal_options.count() > 0:
+                    await personal_options.first.click()
+                    logger.info("account_type_selected", choice="personal")
+                    await asyncio.sleep(3)
+            except Exception:
+                pass
+
+            # Handle onboarding tour — click Skip/dismiss
+            for _ in range(3):
+                try:
+                    skip_btn = page.locator(
+                        'button:has-text("Skip"), '
+                        'a:has-text("Skip"), '
+                        'button:has-text("Maybe later"), '
+                        'button:has-text("No thanks")'
+                    )
+                    if await skip_btn.count() > 0:
+                        await skip_btn.first.click()
+                        logger.info("onboarding_skipped")
+                        await asyncio.sleep(2)
+                    else:
+                        break
+                except Exception:
+                    break
 
             try:
                 await page.screenshot(path="data/debug_registration_complete.png")
             except Exception:
                 pass
 
+            # ============================================================
+            # Phase 3: Extract access_token from chatgpt.com session.
+            # Navigate to /api/auth/session to get the OAuth token.
+            # ============================================================
+
+            access_token = ""
+            refresh_token = ""
+            expires_in = 0
+
+            try:
+                response = await page.goto(
+                    "https://chatgpt.com/api/auth/session",
+                    wait_until="domcontentloaded",
+                    timeout=15000,
+                )
+                if response and response.ok:
+                    import json as _json
+
+                    body = await response.text()
+                    session_data = _json.loads(body)
+                    access_token = str(session_data.get("accessToken", ""))
+                    # Session may include expires or other fields
+                    expires_str = str(session_data.get("expires", ""))
+                    if access_token:
+                        logger.info(
+                            "session_token_extracted",
+                            email=context.email,
+                            token_prefix=access_token[:20] + "...",
+                            expires=expires_str,
+                        )
+                    else:
+                        logger.warning("session_token_empty", body_keys=list(session_data.keys()))
+                else:
+                    status = response.status if response else "no_response"
+                    logger.warning("session_endpoint_failed", status=status)
+            except Exception as exc:
+                logger.warning("session_token_extraction_failed", error=str(exc))
+
             final_url = page.url
             logger.info(
                 "registration_complete",
                 email=context.email,
                 url=final_url,
+                has_token=bool(access_token),
             )
 
-            return StepResult(
-                success=True,
-                data={
-                    "registered": True,
-                    "final_url": final_url,
-                },
-            )
+            result_data: dict[str, object] = {
+                "registered": True,
+                "final_url": final_url,
+            }
+            if access_token:
+                result_data["access_token"] = access_token
+            if refresh_token:
+                result_data["refresh_token"] = refresh_token
+            if expires_in:
+                result_data["expires_in"] = expires_in
+
+            return StepResult(success=True, data=result_data)
 
         except Exception as exc:
             try:
