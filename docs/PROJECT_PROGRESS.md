@@ -39,8 +39,9 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 │  ├── /v1/models                                          │
 │  └── /v1/chat/completions (流式 SSE + 非流式)            │
 │                                                          │
-│  chat2api 转换层 (待实现):                                │
-│  ├── 安全令牌 Pipeline (VM→Req→PoW→Turnstile→Conduit)    │
+│  chat2api 转换层 (已完成 ✅):                              │
+│  ├── chat2api v1.8.8-beta2 → localhost:5005              │
+│  ├── 安全令牌自动获取 (VM→PoW→Turnstile→Conduit)         │
 │  ├── OpenAI API ↔ backend-api 格式转换                   │
 │  └── chatgpt.com/backend-api/conversation 调用           │
 │                                                          │
@@ -123,6 +124,42 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 | 代理联动 | `openai_proxy.py` | list_models + chat_completions 429 → mark_usage_limited |
 | 健康检查恢复 | `health_checker.py` | usage_limited 到期自动恢复, 到期前不探活 |
 | 测试 | `test_account_health.py` + `test_health_checker.py` | 6 个新用例 |
+
+### P4.5 - chat2api 集成 (已完成, 2026-03-05)
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| chat2api 部署 | `/home/talent/projects/chat2api/` | lanqian528/chat2api v1.8.8-beta2, localhost:5005 |
+| 静态模型列表 | `openai_proxy.py` | `_CHAT2API_MODELS` + `_static_models_response()`, chat2api 不支持 /v1/models |
+| localhost 检测 | `openai_proxy.py` | `list_models()` 检测 localhost 返回静态列表 |
+| 代理跳过 | `openai_proxy.py` | `_build_chat_client()` 检测 localhost 跳过 HTTP 代理 |
+| 探针跳过 | `health_checker.py` | 新增 `skip_probe` 参数, chat2api 模式下跳过 list_models 探活 |
+| 应用适配 | `app.py` | 检测 chat2api 模式, 传递 `skip_probe=True` 给 HealthChecker |
+| 配置变更 | `settings.yaml` | `openai.base_url` → `http://localhost:5005` |
+| 测试更新 | `test_openai_proxy.py` | `test_list_models` 改为验证静态模型列表 |
+
+#### chat2api 集成修复记录
+
+| # | 问题 | 根因 | 修复 |
+|---|------|------|------|
+| 1 | Fernet 加密密钥不匹配 | 用 test key 保存账号，settings 用不同密钥 | 重新保存账号使用 settings 密钥 |
+| 2 | HealthChecker 502 | chat2api 不支持 /v1/models → 账号标记 cooling | `skip_probe=True` 跳过探针 |
+| 3 | 代理回退 Bug | `openai_proxy=""` 回退到 `http_proxy=127.0.0.1:7897` | localhost 检测跳过代理 |
+| 4 | test_list_models 失败 | 测试期望上游响应但 localhost 返回静态列表 | 测试改为验证静态列表 |
+
+#### 验证结果
+
+```
+全链路验证通过:
+  客户端 (sk-xxx) → 后端 (8001) → chat2api (5005) → ChatGPT backend-api
+
+  ✅ 非流式: POST /v1/chat/completions → 200 JSON response
+  ✅ 流式:   POST /v1/chat/completions?stream=true → SSE text/event-stream
+  ✅ 模型列表: GET /v1/models → 静态列表 (12 models)
+  ✅ 测试: 49/49 通过
+
+测试账号: tmhgx3r3@talenting.vip (account_id=5, free plan, active)
+```
 
 ### P4 - 注册自动化 (已完成)
 
@@ -359,11 +396,14 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 ### 待实现
 
 1. ~~自动化 platform.openai.com 获取 API Key~~ ← 废弃，改用 backend-api 方案
-2. 接入 chat2api 或 realasfngl/ChatGPT 库实现安全令牌 + backend-api 调用
-3. 实现 OpenAI API → backend-api 请求格式转换
-4. 实现 backend-api SSE → OpenAI API SSE 响应格式转换
-5. 扩展 account_store 存储 session accessToken
-6. 测试单账号完整链路：注册 → 获取 token → backend-api 调用 → 格式转换返回
+2. ~~接入 chat2api 实现安全令牌 + backend-api 调用~~ ✅ (2026-03-05)
+3. ~~OpenAI API → backend-api 请求格式转换~~ ✅ (chat2api 内置)
+4. ~~backend-api SSE → OpenAI API SSE 响应格式转换~~ ✅ (chat2api 内置)
+5. ~~扩展 account_store 存储 session accessToken~~ ✅ (openai_token 字段)
+6. ~~单账号完整链路验证~~ ✅ (2026-03-05 全链路通过)
+7. 仪表盘增强: 接入真实用量数据 + 成功率 + 趋势图
+8. 进程管理: chat2api + 后端服务状态管理
+9. 批量注册 + 自动 token 获取
 
 ### 详细设计
 
@@ -373,11 +413,13 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 
 ## 待完成事项
 
-### 高优先级（当前）— chat2api 转换层
-- [ ] **接入 chat2api 开源库**，实现 backend-api 安全令牌 + 调用
-- [ ] **格式转换层**：OpenAI API ↔ backend-api 请求/响应转换
-- [ ] **扩展 account_store** 存储 session accessToken + cookies
-- [ ] **单账号端到端验证**：注册 → 获取 token → backend-api → 格式转换
+### 高优先级（已完成）— chat2api 转换层
+- [x] ~~接入 chat2api 开源库，实现 backend-api 安全令牌 + 调用~~ (2026-03-05, chat2api v1.8.8-beta2)
+- [x] ~~格式转换层：OpenAI API ↔ backend-api 请求/响应转换~~ (chat2api 内置)
+- [x] ~~扩展 account_store 存储 session accessToken~~ (openai_token 字段存 JWT)
+- [x] ~~单账号端到端验证~~ (2026-03-05, 流式 + 非流式全部通过)
+
+### 高优先级（当前）
 - [ ] 批量注册面板（数量 + 并发 + 进度 + 成功率）
 
 ### 高优先级（已完成）
@@ -396,9 +438,10 @@ codex2api 是一个 AI 模型 API 聚合管理工具，用于统一管理多个 
 - [x] ~~日志持久化~~ (按天 JSONL 归档)
 - [x] ~~前端实时日志查看~~ (WebSocket 推送)
 
-### 中优先级
-- [ ] 仪表盘增强（TPM + 成功率 + 趋势图）
-- [ ] 账号表增强（请求数、Token 过期、错误信息、usage_limited 状态显示）
+### 中优先级（当前进行中）
+- [ ] 仪表盘增强（接入真实用量 + 成功率 + TPM + 趋势图）
+- [ ] 账号表增强（运行时状态、请求数、Token 过期、错误信息）
+- [ ] 进程管理面板（chat2api + 后端服务启停/状态/日志）
 - [ ] 注册任务队列 (支持批量并发注册)
 - [ ] 纯 HTTP 注册（提升注册速度到 100+/min）
 - [ ] 管理员密码 bcrypt 加密 (当前明文)
