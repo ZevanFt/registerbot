@@ -218,13 +218,14 @@ check() {
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <up|down|status|check>
+Usage: $(basename "$0") <up|down|status|check|init-admin>
 
 Commands:
   up      Start chat2api/backend/frontend in background
   down    Stop all started processes
   status  Show process + port status
   check   Run status and basic API/chat checks
+  init-admin  Initialize admin user interactively (backend/config/settings.yaml + users table)
 EOF
 }
 
@@ -234,6 +235,13 @@ case "${cmd}" in
   down) down ;;
   status) status ;;
   check) check ;;
+  init-admin)
+    shift
+    py_cmd="python3"
+    if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
+      py_cmd="${BACKEND_DIR}/.venv/bin/python"
+    fi
+    "${py_cmd}" "${ROOT_DIR}/scripts/init_admin.py" "$@"
+    ;;
   *) usage; exit 1 ;;
 esac
-

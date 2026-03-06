@@ -147,7 +147,7 @@ npx vite dev
 - [ ] OpenAI API 可达: `curl https://api.openai.com/v1/models` (可能需代理)
 - [ ] 后端启动: `curl http://localhost:8001/docs`
 - [ ] 前端启动: 浏览器打开 `http://localhost:5173`
-- [ ] 登录成功: admin / 你设的密码
+- [ ] 登录成功: 使用初始化脚本设置的管理员账号
 - [ ] 创建 API Token: 令牌管理页面
 - [ ] 添加测试账号 (手动): 账号管理页面
 
@@ -182,7 +182,7 @@ tar czf register-bot.tar.gz \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
   --exclude='data/*.db' \
-  backend/ frontend/ docs/
+  backend/ frontend/ docs/ scripts/
 
 # 上传到服务器
 scp register-bot.tar.gz user@云IP:/opt/
@@ -207,6 +207,10 @@ mkdir -p data data/logs
 
 # 编辑配置 (关键改动!)
 vim config/settings.yaml
+
+# 回到项目根目录，初始化管理员（推荐）
+cd /opt/register-bot
+./scripts/dev_stack.sh init-admin
 ```
 
 **云端 settings.yaml 关键差异：**
@@ -221,6 +225,33 @@ talentmail:
 openai:
   base_url: https://api.openai.com   # 云端能否直连? 需确认
 ```
+
+### 2.3.1 管理员初始化脚本（推荐，交互式）
+
+```bash
+cd /opt/register-bot
+./scripts/dev_stack.sh init-admin
+```
+
+脚本会交互提问并写入：
+- `backend/config/settings.yaml` 的 `admin.username/admin.password/admin.jwt_secret`
+- `backend/data/accounts.db` 的 `users` 表（创建或更新管理员用户）
+
+非交互模式（CI 或自动化）：
+
+```bash
+cd /opt/register-bot
+./scripts/dev_stack.sh init-admin \
+  --non-interactive \
+  --username admin \
+  --password 'YourStrongPass123!' \
+  --email 'admin@example.com'
+```
+
+说明：
+- `email` 非必填
+- `jwt_secret` 不传时自动生成
+- 脚本会将该用户权限强制为 `admin`
 
 ### 2.4 前端构建
 
