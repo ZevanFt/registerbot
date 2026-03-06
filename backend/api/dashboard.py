@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import sys
 import time
 from collections import Counter
@@ -50,6 +51,26 @@ class AccountStatusPatchRequest(BaseModel):
     status: str = Field(min_length=1)
 
 
+class AccountImportItem(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+    plan: str = "free"
+    status: str = "active"
+    phone: str | None = None
+    openai_token: str | None = None
+    refresh_token: str | None = None
+    token_expires_at: str | None = None
+    token_last_refreshed_at: str | None = None
+    token_status: str = "unknown"
+    token_refresh_error: str | None = None
+    token_refresh_attempts: int = 0
+
+
+class AccountImportRequest(BaseModel):
+    conflict_strategy: str = "skip"
+    accounts: list[AccountImportItem] = Field(default_factory=list)
+
+
 def _build_store() -> AccountStore:
     settings = load_settings()
     return AccountStore(settings.storage.db_path, settings.storage.encryption_key)
@@ -78,6 +99,14 @@ def _sanitize_account(account: dict[str, Any]) -> dict[str, Any]:
 def _get_account_with_health(store: AccountStore, account_id: int) -> dict[str, Any] | None:
     for item in store.list_accounts_with_health():
         if int(item.get("id", -1)) == account_id:
+            return item
+    return None
+
+
+def _find_account_by_email(store: AccountStore, email: str) -> dict[str, Any] | None:
+    target = email.strip().lower()
+    for item in store.list_accounts_with_health():
+        if str(item.get("email", "")).strip().lower() == target:
             return item
     return None
 
@@ -224,3 +253,135 @@ def delete_account(account_id: int) -> None:
     deleted = store.delete_account(account_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+
+@router.get("/accounts/{account_id}/password/reveal")
+def reveal_account_password(account_id: int) -> dict[str, Any]:
+    store = _build_store()
+    account = store.get_account(account_id)
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return {
+        "id": account["id"],
+        "email": account["email"],
+        "password": account["password"],
+    }
+
+
+@router.get("/accounts/export")
+def export_accounts(ids: str | None = None) -> dict[str, Any]:
+    store = _build_store()
+    all_accounts = store.list_accounts_with_health()
+    accounts_map = {int(item["id"]): item for item in all_accounts}
+
+    selected_ids: set[int] | None = None
+    if ids:
+        selected_ids = set()
+        for part in ids.split(","):
+            text = part.strip()
+            if not text:
+                continue
+            try:
+                selected_ids.add(int(text))
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid id: {text}") from exc
+
+    exported: list[dict[str, Any]] = []
+    for item in store.list_accounts():
+        account_id = int(item["id"])
+        if selected_ids is not None and account_id not in selected_ids:
+            continue
+        health = accounts_map.get(account_id, {})
+        exported.append(
+            {
+                "id": account_id,
+                "email": item["email"],
+                "password": item["password"],
+                "plan": item["plan"],
+                "status": item["status"],
+                "phone": item.get("phone"),
+                "openai_token": item.get("openai_token"),
+                "refresh_token": item.get("refresh_token"),
+                "token_expires_at": item.get("token_expires_at"),
+                "token_last_refreshed_at": item.get("token_last_refreshed_at"),
+                "token_status": item.get("token_status"),
+                "token_refresh_error": item.get("token_refresh_error"),
+                "token_refresh_attempts": int(item.get("token_refresh_attempts") or 0),
+                "runtime_status": health.get("runtime_status"),
+                "consecutive_failures": int(health.get("consecutive_failures") or 0),
+                "last_failure_reason": health.get("last_failure_reason"),
+            }
+        )
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(exported),
+        "accounts": exported,
+    }
+
+
+@router.post("/accounts/import")
+def import_accounts(payload: AccountImportRequest) -> dict[str, Any]:
+    store = _build_store()
+    strategy = payload.conflict_strategy.strip().lower()
+    if strategy not in {"skip", "overwrite"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="conflict_strategy must be skip or overwrite",
+        )
+
+    imported = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+    errors: list[dict[str, Any]] = []
+
+    for item in payload.accounts:
+        email = item.email.strip()
+        if not email:
+            failed += 1
+            errors.append({"email": item.email, "error": "email is required"})
+            continue
+        try:
+            exists = _find_account_by_email(store, email)
+            account_payload = item.model_dump()
+            if exists is None:
+                store.save_account(account_payload)
+                imported += 1
+                continue
+
+            if strategy == "skip":
+                skipped += 1
+                continue
+
+            account_id = int(exists["id"])
+            store.update_account(
+                account_id,
+                {
+                    "email": account_payload["email"],
+                    "password": account_payload["password"],
+                    "plan": account_payload["plan"],
+                    "status": account_payload["status"],
+                    "phone": account_payload.get("phone"),
+                    "openai_token": account_payload.get("openai_token"),
+                    "refresh_token": account_payload.get("refresh_token"),
+                    "token_expires_at": account_payload.get("token_expires_at"),
+                    "token_last_refreshed_at": account_payload.get("token_last_refreshed_at"),
+                    "token_status": account_payload.get("token_status"),
+                    "token_refresh_error": account_payload.get("token_refresh_error"),
+                    "token_refresh_attempts": int(account_payload.get("token_refresh_attempts") or 0),
+                },
+            )
+            updated += 1
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            errors.append({"email": email, "error": str(exc)})
+
+    return {
+        "total": len(payload.accounts),
+        "imported": imported,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "errors": errors,
+    }

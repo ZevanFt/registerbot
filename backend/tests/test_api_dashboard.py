@@ -138,6 +138,57 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(list_after_delete.status_code, 200)
         self.assertEqual(list_after_delete.json(), [])
 
+    def test_accounts_reveal_export_import(self) -> None:
+        first = self.client.post(
+            "/api/accounts",
+            json={"email": "first@example.com", "password": "secret-1", "plan": "free", "status": "active"},
+        )
+        second = self.client.post(
+            "/api/accounts",
+            json={"email": "second@example.com", "password": "secret-2", "plan": "plus", "status": "active"},
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        first_id = int(first.json()["id"])
+
+        reveal = self.client.get(f"/api/accounts/{first_id}/password/reveal")
+        self.assertEqual(reveal.status_code, 200)
+        self.assertEqual(reveal.json()["password"], "secret-1")
+
+        exported = self.client.get(f"/api/accounts/export?ids={first_id}")
+        self.assertEqual(exported.status_code, 200)
+        payload = exported.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["accounts"][0]["email"], "first@example.com")
+        self.assertIn("password", payload["accounts"][0])
+
+        import_payload = {
+            "conflict_strategy": "overwrite",
+            "accounts": [
+                {
+                    "email": "first@example.com",
+                    "password": "new-secret",
+                    "plan": "plus",
+                    "status": "active",
+                    "token_status": "valid",
+                },
+                {
+                    "email": "third@example.com",
+                    "password": "secret-3",
+                    "plan": "free",
+                    "status": "active",
+                },
+            ],
+        }
+        imported = self.client.post("/api/accounts/import", json=import_payload)
+        self.assertEqual(imported.status_code, 200)
+        self.assertEqual(imported.json()["updated"], 1)
+        self.assertEqual(imported.json()["imported"], 1)
+
+        reveal_after = self.client.get(f"/api/accounts/{first_id}/password/reveal")
+        self.assertEqual(reveal_after.status_code, 200)
+        self.assertEqual(reveal_after.json()["password"], "new-secret")
+
 
 if __name__ == "__main__":
     unittest.main()

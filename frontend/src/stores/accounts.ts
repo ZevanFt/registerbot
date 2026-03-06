@@ -17,10 +17,15 @@ export interface Account {
   updated_at: string
 }
 
-export interface CreateAccountPayload {
-  email: string
-  password: string
-  plan: 'free' | 'plus'
+export interface AccountExportPayload {
+  exported_at: string
+  count: number
+  accounts: Array<Record<string, unknown>>
+}
+
+export interface AccountImportPayload {
+  conflict_strategy: 'skip' | 'overwrite'
+  accounts: Array<Record<string, unknown>>
 }
 
 export const useAccountsStore = defineStore('accounts', () => {
@@ -35,21 +40,6 @@ export const useAccountsStore = defineStore('accounts', () => {
       accounts.value = await apiGet<Account[]>('/accounts')
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载账号失败'
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const createAccount = async (data: CreateAccountPayload) => {
-    loading.value = true
-    error.value = ''
-    try {
-      const created = await apiPost<Account>('/accounts', data)
-      accounts.value = [created, ...accounts.value]
-      return created
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '创建账号失败'
       throw err
     } finally {
       loading.value = false
@@ -85,13 +75,64 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
+  const revealAccountPassword = async (id: number) => {
+    loading.value = true
+    error.value = ''
+    try {
+      return await apiGet<{ id: number; email: string; password: string }>(`/accounts/${id}/password/reveal`)
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '查看密码失败'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const exportAccounts = async (ids: number[]) => {
+    loading.value = true
+    error.value = ''
+    try {
+      const query = ids.length > 0 ? `?ids=${ids.join(',')}` : ''
+      return await apiGet<AccountExportPayload>(`/accounts/export${query}`)
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导出账号失败'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const importAccounts = async (payload: AccountImportPayload) => {
+    loading.value = true
+    error.value = ''
+    try {
+      const result = await apiPost<{
+        total: number
+        imported: number
+        updated: number
+        skipped: number
+        failed: number
+        errors: Array<{ email: string; error: string }>
+      }>('/accounts/import', payload)
+      await fetchAccounts()
+      return result
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导入账号失败'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     accounts,
     loading,
     error,
     fetchAccounts,
-    createAccount,
     updateAccountStatus,
-    deleteAccount
+    deleteAccount,
+    revealAccountPassword,
+    exportAccounts,
+    importAccounts
   }
 })

@@ -175,6 +175,22 @@
 - 质量验证：
   - 前端类型检查通过：`npm run type-check`
 
+### 账号管理去混淆改造（迁移优先）✅ (2026-03-06)
+
+- 账号管理页面调整：
+  - 移除“添加账号”入口，避免与迁移能力混淆
+  - 新增“导入账号 / 导出所选 / 导出筛选”入口
+  - 支持多选勾选批量导出
+- 后端新增迁移 API：
+  - `GET /api/accounts/export?ids=...`（导出指定账号）
+  - `POST /api/accounts/import`（支持冲突策略：`skip/overwrite`）
+- 管理员明文密码查看：
+  - 新增 `GET /api/accounts/{id}/password/reveal`
+  - 前端提供“查看密码”按钮 + 二次确认 + 弹窗复制
+- 质量验证：
+  - 后端：`pytest tests/test_api_dashboard.py -q`（4 passed）
+  - 前端：`npm run type-check`（pass）
+
 ### 前端白屏稳定性修复 ✅
 
 - 修复“切换子页面后整站空白”高频问题：
