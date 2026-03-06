@@ -1,5 +1,24 @@
 # codex2api - 部署指南
 
+> 文档级别: `P0 / 最高优先级`
+> 
+> 本文档是部署与联调的单一事实源（SSOT）。当其他文档出现端口、启动命令或登录路径不一致时，以本文档为准。
+
+## 当前基线 (2026-03-07)
+
+- 前端开发端口: `5173` (`http://localhost:5173/#/login`)
+- 后端 API 端口: `8001` (`http://localhost:8001`)
+- chat2api 端口: `5005` (`http://localhost:5005`)
+- 前端登录请求: `POST http://localhost:8001/api/auth/login`
+- 管理端登录来源: `users` 表（非账号池 `accounts` 表）
+
+### 关键链路（登录）
+
+1. 浏览器访问 `http://localhost:5173/#/login`
+2. 前端读取 `frontend/.env.development` 中 `VITE_API_BASE_URL=http://localhost:8001/api`
+3. 前端请求 `POST http://localhost:8001/api/auth/login`
+4. 后端在 `backend/data/accounts.db` 的 `users` 表校验账号密码并签发 JWT
+
 ## 两个阶段
 
 ### 阶段 1: 本地开发联调
@@ -8,7 +27,7 @@
 本地电脑                              云服务器
 ┌────────────────┐                  ┌──────────────────┐
 │ Frontend :5173 │                  │                  │
-│ Backend  :8000 │───── HTTP ──────▶│ TalentMail :端口  │
+│ Backend  :8001 │───── HTTP ──────▶│ TalentMail :端口  │
 └────────────────┘                  └──────────────────┘
         │
         │ HTTPS (需代理)
@@ -28,11 +47,11 @@
 │                                               │
 │  Nginx (反向代理, :80/:443)                    │
 │  ├── /          → Frontend 静态文件            │
-│  ├── /api/*     → Backend :8000               │
-│  ├── /v1/*      → Backend :8000               │
-│  └── /ws/*      → Backend :8000 (WebSocket)   │
+│  ├── /api/*     → Backend :8001               │
+│  ├── /v1/*      → Backend :8001               │
+│  └── /ws/*      → Backend :8001 (WebSocket)   │
 │                                               │
-│  Backend (uvicorn :8000)                      │
+│  Backend (uvicorn :8001)                      │
 │  ├── API 代理、管理、Pipeline                  │
 │  └── 直接访问 localhost TalentMail (同机!)     │
 │                                               │
@@ -115,7 +134,7 @@ storage:
 ```bash
 # 终端 1: 后端
 cd backend
-.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8001 --reload
 
 # 终端 2: 前端
 cd frontend
@@ -126,7 +145,7 @@ npx vite dev
 
 - [ ] TalentMail 云端可达: `curl http://云IP:端口/api/health`
 - [ ] OpenAI API 可达: `curl https://api.openai.com/v1/models` (可能需代理)
-- [ ] 后端启动: `curl http://localhost:8000/docs`
+- [ ] 后端启动: `curl http://localhost:8001/docs`
 - [ ] 前端启动: 浏览器打开 `http://localhost:5173`
 - [ ] 登录成功: admin / 你设的密码
 - [ ] 创建 API Token: 令牌管理页面
@@ -231,7 +250,7 @@ Type=exec
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/register-bot/backend
-ExecStart=/opt/register-bot/backend/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+ExecStart=/opt/register-bot/backend/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -267,7 +286,7 @@ server {
 
     # 管理 API 代理
     location /api/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -276,7 +295,7 @@ server {
 
     # OpenAI 兼容 API 代理
     location /v1/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 300s;  # 流式请求需要长超时
@@ -285,7 +304,7 @@ server {
 
     # WebSocket 代理
     location /ws/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $websocket_upgrade;
         proxy_set_header Connection "upgrade";
@@ -330,7 +349,7 @@ sudo journalctl -u codex2api -f
 sudo systemctl status nginx
 
 # 测试 API
-curl http://localhost:8000/docs
+curl http://localhost:8001/docs
 curl http://你的域名/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"你的密码"}'
@@ -344,13 +363,13 @@ curl http://你的域名/v1/models \
 
 ## 前端 API 地址适配
 
-当前前端 `api/client.ts` 请求 `http://localhost:8000`，部署后需要改为相对路径。
+当前前端 `api/client.ts` 在开发环境请求 `http://localhost:8001`，部署后建议改为相对路径。
 
 **方案：环境变量控制**
 
 `frontend/.env.development`:
 ```
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:8001
 ```
 
 `frontend/.env.production`:
@@ -363,7 +382,7 @@ VITE_API_BASE_URL=
 const BASE = import.meta.env.VITE_API_BASE_URL || ''
 ```
 
-开发时请求 `http://localhost:8000/api/...`，
+开发时请求 `http://localhost:8001/api/...`，
 生产时请求 `/api/...`（Nginx 代理到后端）。
 
 ---
@@ -419,8 +438,8 @@ tar czf backup-$(date +%Y%m%d).tar.gz \
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | Nginx | 80/443 | 统一入口, HTTPS |
-| codex2api Backend | 8000 | 仅监听 127.0.0.1, 不对外暴露 |
+| codex2api Backend | 8001 | 仅监听 127.0.0.1, 不对外暴露 |
 | TalentMail | 原有端口 | 已部署, Backend 通过 localhost 访问 |
 
-**安全提醒：** 后端 uvicorn 监听 `127.0.0.1:8000`（不是 `0.0.0.0`），
+**安全提醒：** 后端 uvicorn 监听 `127.0.0.1:8001`（不是 `0.0.0.0`），
 外部只能通过 Nginx 访问，防止绕过 Nginx 直接打后端。

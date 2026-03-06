@@ -4,14 +4,17 @@ import { apiGet, apiPost } from '@/api/client'
 
 const TOKEN_KEY = 'admin_token'
 const USERNAME_KEY = 'admin_username'
+const PERMISSION_KEY = 'admin_permission'
 
 interface LoginResponse {
   token: string
   username: string
+  permission: string
 }
 
 interface MeResponse {
   username: string
+  permission: string
 }
 
 function getStoredValue(key: string): string {
@@ -24,6 +27,7 @@ function getStoredValue(key: string): string {
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string>(getStoredValue(TOKEN_KEY))
   const username = ref<string>(getStoredValue(USERNAME_KEY))
+  const permission = ref<string>(getStoredValue(PERMISSION_KEY))
   const loading = ref(false)
   const error = ref('')
   const isLoggedIn = computed(() => !!token.value)
@@ -42,6 +46,11 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       window.localStorage.removeItem(USERNAME_KEY)
     }
+    if (permission.value) {
+      window.localStorage.setItem(PERMISSION_KEY, permission.value)
+    } else {
+      window.localStorage.removeItem(PERMISSION_KEY)
+    }
   }
 
   const login = async (inputUsername: string, password: string) => {
@@ -51,6 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
       const result = await apiPost<LoginResponse>('/auth/login', { username: inputUsername, password })
       token.value = result.token
       username.value = result.username
+      permission.value = result.permission
       persist()
       return result
     } catch (err) {
@@ -64,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     token.value = ''
     username.value = ''
+    permission.value = ''
     error.value = ''
     persist()
     if (typeof window !== 'undefined' && window.location.hash !== '#/login') {
@@ -81,6 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const profile = await apiGet<MeResponse>('/auth/me')
       username.value = profile.username
+      permission.value = profile.permission
       persist()
       return true
     } catch (err) {
@@ -95,6 +107,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     token,
     username,
+    permission,
     loading,
     error,
     isLoggedIn,

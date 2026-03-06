@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import secrets
 import sys
 import time
 from collections import Counter
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.config.settings import load_settings
 from src.integrations.openai_api import OpenAIChatClient
+from src.middleware.auth import AdminContext, require_admin_token
 from src.services.account_pool import AccountPool, NoAvailableAccountError
 from src.storage.account_store import AccountStore
 from src.storage.stats_store import StatsStore
+from src.storage.user_store import UserStore
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 _SERVICE_STARTED_AT = time.time()
@@ -71,6 +74,24 @@ class AccountImportRequest(BaseModel):
     accounts: list[AccountImportItem] = Field(default_factory=list)
 
 
+class UserCreateRequest(BaseModel):
+    username: str = Field(min_length=3)
+    password: str = Field(min_length=6)
+    permission: str = Field(default="operator", min_length=3)
+    email: str | None = None
+    is_active: bool = True
+
+
+class UserPatchRequest(BaseModel):
+    permission: str | None = None
+    email: str | None = None
+    is_active: bool | None = None
+
+
+class UserResetPasswordRequest(BaseModel):
+    new_password: str | None = None
+
+
 def _build_store() -> AccountStore:
     settings = load_settings()
     return AccountStore(settings.storage.db_path, settings.storage.encryption_key)
@@ -79,6 +100,13 @@ def _build_store() -> AccountStore:
 def _build_stats_store() -> StatsStore:
     settings = load_settings()
     return StatsStore(settings.storage.stats_db_path)
+
+
+def _build_user_store() -> UserStore:
+    settings = load_settings()
+    store = UserStore(settings.storage.db_path)
+    store.ensure_admin_user(settings.admin.username, settings.admin.password)
+    return store
 
 
 def _sanitize_account(account: dict[str, Any]) -> dict[str, Any]:
@@ -94,6 +122,24 @@ def _sanitize_account(account: dict[str, Any]) -> dict[str, Any]:
         "created_at": account["created_at"],
         "updated_at": account["updated_at"],
     }
+
+
+def _sanitize_user(user: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(user["id"]),
+        "username": str(user["username"]),
+        "email": user.get("email"),
+        "permission": str(user.get("permission") or "operator"),
+        "is_active": bool(int(user.get("is_active") or 0)),
+        "created_at": user.get("created_at"),
+        "updated_at": user.get("updated_at"),
+        "last_login_at": user.get("last_login_at"),
+    }
+
+
+def _assert_admin_permission(ctx: AdminContext) -> None:
+    if ctx.permission != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permission required")
 
 
 def _get_account_with_health(store: AccountStore, account_id: int) -> dict[str, Any] | None:
@@ -384,4 +430,95 @@ def import_accounts(payload: AccountImportRequest) -> dict[str, Any]:
         "skipped": skipped,
         "failed": failed,
         "errors": errors,
+    }
+
+
+@router.get("/users")
+def list_users(ctx: AdminContext = Depends(require_admin_token)) -> list[dict[str, Any]]:
+    _assert_admin_permission(ctx)
+    store = _build_user_store()
+    return [_sanitize_user(item) for item in store.list_users()]
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreateRequest, ctx: AdminContext = Depends(require_admin_token)) -> dict[str, Any]:
+    _assert_admin_permission(ctx)
+    permission = payload.permission.strip().lower()
+    if permission not in {"admin", "operator", "viewer"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="permission must be admin/operator/viewer")
+
+    store = _build_user_store()
+    try:
+        user_id = store.create_user(
+            username=payload.username,
+            password=payload.password,
+            permission=permission,
+            email=payload.email,
+            is_active=payload.is_active,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if "unique" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username or email already exists") from exc
+        raise
+    created = store.get_user(user_id)
+    if created is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="User create failed")
+    return _sanitize_user(created)
+
+
+@router.patch("/users/{user_id}")
+def patch_user(
+    user_id: int,
+    payload: UserPatchRequest,
+    ctx: AdminContext = Depends(require_admin_token),
+) -> dict[str, Any]:
+    _assert_admin_permission(ctx)
+    permission = payload.permission.strip().lower() if payload.permission is not None else None
+    if permission is not None and permission not in {"admin", "operator", "viewer"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="permission must be admin/operator/viewer")
+
+    store = _build_user_store()
+    try:
+        updated = store.update_user(
+            user_id,
+            permission=permission,
+            email=payload.email,
+            is_active=payload.is_active,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if "unique" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email already exists") from exc
+        raise
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user = store.get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return _sanitize_user(user)
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    payload: UserResetPasswordRequest,
+    ctx: AdminContext = Depends(require_admin_token),
+) -> dict[str, Any]:
+    _assert_admin_permission(ctx)
+    next_password = payload.new_password or f"Tmp-{secrets.token_urlsafe(10)}"
+    if len(next_password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="password too short")
+
+    store = _build_user_store()
+    updated = store.reset_password(user_id, next_password)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = store.get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {
+        "id": int(user["id"]),
+        "username": str(user["username"]),
+        "permission": str(user.get("permission") or "operator"),
+        "new_password": next_password,
     }

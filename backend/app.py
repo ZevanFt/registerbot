@@ -31,12 +31,15 @@ from src.middleware.auth import OpenAIProxyException, require_admin_token
 from src.services.health_checker import HealthChecker
 from src.services.token_refresher import TokenRefresher, TokenRefresherSettings
 from src.storage.account_store import AccountStore
+from src.storage.user_store import UserStore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = load_settings()
     account_store = AccountStore(settings.storage.db_path, settings.storage.encryption_key)
+    user_store = UserStore(settings.storage.db_path)
+    user_store.ensure_admin_user(settings.admin.username, settings.admin.password)
     openai_proxy = settings.network.openai_proxy or settings.network.http_proxy
     chat_client = OpenAIChatClient(
         base_url=settings.openai.base_url,

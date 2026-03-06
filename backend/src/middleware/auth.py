@@ -24,6 +24,7 @@ class AdminContext(BaseModel):
     """Resolved admin context from JWT auth."""
 
     username: str
+    permission: str = "admin"
 
 
 class OpenAIProxyException(Exception):
@@ -86,8 +87,11 @@ async def require_admin_token(request: Request) -> AdminContext:
     username = payload.get("sub")
     if not isinstance(username, str) or not username:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    permission = payload.get("permission")
+    if not isinstance(permission, str) or not permission:
+        permission = "admin"
 
-    return AdminContext(username=username)
+    return AdminContext(username=username, permission=permission)
 
 
 async def require_bearer_token(request: Request) -> TokenContext:

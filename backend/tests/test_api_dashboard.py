@@ -189,6 +189,42 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(reveal_after.status_code, 200)
         self.assertEqual(reveal_after.json()["password"], "new-secret")
 
+    def test_users_management(self) -> None:
+        users = self.client.get("/api/users")
+        self.assertEqual(users.status_code, 200)
+        baseline = users.json()
+        self.assertGreaterEqual(len(baseline), 1)
+        self.assertEqual(baseline[0]["permission"], "admin")
+
+        created = self.client.post(
+            "/api/users",
+            json={
+                "username": "partner-user",
+                "password": "PartnerPass123",
+                "permission": "operator",
+                "email": "partner@example.com",
+                "is_active": True,
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        created_payload = created.json()
+        self.assertEqual(created_payload["username"], "partner-user")
+        self.assertEqual(created_payload["permission"], "operator")
+        user_id = int(created_payload["id"])
+
+        patched = self.client.patch(
+            f"/api/users/{user_id}",
+            json={"permission": "viewer", "is_active": False},
+        )
+        self.assertEqual(patched.status_code, 200)
+        self.assertEqual(patched.json()["permission"], "viewer")
+        self.assertFalse(patched.json()["is_active"])
+
+        reset = self.client.post(f"/api/users/{user_id}/reset-password", json={})
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(reset.json()["id"], user_id)
+        self.assertTrue(len(reset.json()["new_password"]) >= 6)
+
 
 if __name__ == "__main__":
     unittest.main()

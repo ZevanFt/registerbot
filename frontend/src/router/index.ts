@@ -30,6 +30,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '账号管理' }
       },
       {
+        path: 'users',
+        name: 'users',
+        component: () => import('@/pages/Users.vue'),
+        meta: { title: '用户管理' }
+      },
+      {
         path: 'config',
         name: 'config',
         component: () => import('@/pages/Config.vue'),
