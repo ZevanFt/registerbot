@@ -20,7 +20,7 @@
         </div>
 
         <nav class="px-2">
-          <template v-for="entry in menuEntries" :key="entry.key">
+          <template v-for="entry in visibleMenuEntries" :key="entry.key">
             <div
               v-if="entry.type === 'separator'"
               class="my-2 border-t border-slate-200 dark:border-slate-700"
@@ -152,6 +152,7 @@ interface MenuLinkItem {
   label: string
   icon: string
   key: string
+  minPermission: 'viewer' | 'operator' | 'admin'
 }
 
 interface MenuLabelItem {
@@ -178,6 +179,7 @@ const menuEntries: MenuEntry[] = [
     key: 'dashboard',
     path: '/dashboard',
     label: '仪表盘',
+    minPermission: 'viewer',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13h8V3H3v10zM13 21h8V11h-8v10zM13 3v4h8V3h-8zM3 21h8v-4H3v4z"/></svg>'
   },
   {
@@ -185,6 +187,7 @@ const menuEntries: MenuEntry[] = [
     key: 'accounts',
     path: '/accounts',
     label: '账号管理',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M23 21v-2a4 4 0 0 0-3-3.87"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
   },
   {
@@ -192,6 +195,7 @@ const menuEntries: MenuEntry[] = [
     key: 'users',
     path: '/users',
     label: '用户管理',
+    minPermission: 'admin',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 8v6"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 11h6"/></svg>'
   },
   {
@@ -199,6 +203,7 @@ const menuEntries: MenuEntry[] = [
     key: 'config',
     path: '/config',
     label: '配置',
+    minPermission: 'admin',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
   },
   {
@@ -206,6 +211,7 @@ const menuEntries: MenuEntry[] = [
     key: 'tokens',
     path: '/tokens',
     label: '令牌管理',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
   },
   {
@@ -213,6 +219,7 @@ const menuEntries: MenuEntry[] = [
     key: 'stats',
     path: '/stats',
     label: '统计',
+    minPermission: 'viewer',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
   },
   {
@@ -220,6 +227,7 @@ const menuEntries: MenuEntry[] = [
     key: 'logs',
     path: '/logs',
     label: '日志',
+    minPermission: 'viewer',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline stroke-linecap="round" stroke-linejoin="round" points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline stroke-linecap="round" stroke-linejoin="round" points="10 9 9 9 8 9"/></svg>'
   },
   {
@@ -227,6 +235,7 @@ const menuEntries: MenuEntry[] = [
     key: 'playground',
     path: '/playground',
     label: '操练场',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
   },
   {
@@ -243,6 +252,7 @@ const menuEntries: MenuEntry[] = [
     key: 'dev-logs',
     path: '/dev/logs',
     label: '实时日志',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="4 17 10 11 14 15 20 9"/><line x1="20" y1="9" x2="20" y2="15"/><line x1="20" y1="9" x2="14" y2="9"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>'
   },
   {
@@ -250,6 +260,7 @@ const menuEntries: MenuEntry[] = [
     key: 'dev-pipeline',
     path: '/dev/pipeline',
     label: '流水线',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="18" r="2"/><line x1="7" y1="11" x2="10" y2="7"/><line x1="14" y1="7" x2="17" y2="11"/><line x1="17" y1="13" x2="14" y2="17"/><line x1="10" y1="17" x2="7" y2="13"/></svg>'
   },
   {
@@ -257,6 +268,7 @@ const menuEntries: MenuEntry[] = [
     key: 'dev-test',
     path: '/dev/test',
     label: '测试面板',
+    minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="9 11 12 14 22 4"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
   },
   {
@@ -268,6 +280,7 @@ const menuEntries: MenuEntry[] = [
     key: 'about',
     path: '/about',
     label: '关于',
+    minPermission: 'viewer',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
   }
 ]
@@ -291,6 +304,18 @@ watch(
 const sidebarWidth = computed(() => (collapsed.value ? '64px' : '208px'))
 const pageTitle = computed(() => (route.meta.title as string) ?? '仪表盘')
 const isActive = (path: string) => route.path === path
+const permissionLevels = { viewer: 1, operator: 2, admin: 3 } as const
+const visibleMenuEntries = computed(() => {
+  const currentPermission = (authStore.permission || 'viewer') as 'viewer' | 'operator' | 'admin'
+  const currentLevel = permissionLevels[currentPermission] ?? 1
+  return menuEntries.filter((entry) => {
+    if (entry.type !== 'item') {
+      return true
+    }
+    const requiredLevel = permissionLevels[entry.minPermission] ?? 1
+    return currentLevel >= requiredLevel
+  })
+})
 
 function toggleSidebar() {
   collapsed.value = !collapsed.value

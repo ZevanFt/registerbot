@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import jwt
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from src.config.settings import load_settings
@@ -92,6 +92,35 @@ async def require_admin_token(request: Request) -> AdminContext:
         permission = "admin"
 
     return AdminContext(username=username, permission=permission)
+
+
+_PERMISSION_LEVELS = {
+    "viewer": 1,
+    "operator": 2,
+    "admin": 3,
+}
+
+
+def _has_permission(actual: str, required: str) -> bool:
+    return _PERMISSION_LEVELS.get(actual, 0) >= _PERMISSION_LEVELS.get(required, 0)
+
+
+async def require_viewer_permission(ctx: AdminContext = Depends(require_admin_token)) -> AdminContext:
+    if not _has_permission(ctx.permission, "viewer"):
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    return ctx
+
+
+async def require_operator_permission(ctx: AdminContext = Depends(require_admin_token)) -> AdminContext:
+    if not _has_permission(ctx.permission, "operator"):
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    return ctx
+
+
+async def require_admin_permission(ctx: AdminContext = Depends(require_admin_token)) -> AdminContext:
+    if not _has_permission(ctx.permission, "admin"):
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    return ctx
 
 
 async def require_bearer_token(request: Request) -> TokenContext:

@@ -5,10 +5,16 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
+from src.middleware.auth import require_operator_permission
 
 ws_router = APIRouter()
-api_router = APIRouter(prefix="/api/devtools", tags=["devtools"])
+api_router = APIRouter(
+    prefix="/api/devtools",
+    tags=["devtools"],
+    dependencies=[Depends(require_operator_permission)],
+)
 
 
 class PipelineEventHub:

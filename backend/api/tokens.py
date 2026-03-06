@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.config.settings import load_settings
+from src.middleware.auth import require_operator_permission
 from src.storage.token_store import TokenStore
 
-router = APIRouter(prefix="/api/tokens", tags=["tokens"])
+router = APIRouter(
+    prefix="/api/tokens",
+    tags=["tokens"],
+    dependencies=[Depends(require_operator_permission)],
+)
 
 
 class TokenCreateRequest(BaseModel):

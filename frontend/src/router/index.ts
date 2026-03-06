@@ -2,6 +2,20 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-rou
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 
+type Permission = 'viewer' | 'operator' | 'admin'
+
+const permissionLevels: Record<Permission, number> = {
+  viewer: 1,
+  operator: 2,
+  admin: 3
+}
+
+function hasPermission(actual: string, required: Permission): boolean {
+  const actualLevel = permissionLevels[(actual as Permission) || 'viewer'] ?? 0
+  const requiredLevel = permissionLevels[required] ?? 0
+  return actualLevel >= requiredLevel
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
@@ -21,73 +35,73 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'dashboard',
         component: () => import('@/pages/Dashboard.vue'),
-        meta: { title: '仪表盘' }
+        meta: { title: '仪表盘', minPermission: 'viewer' }
       },
       {
         path: 'accounts',
         name: 'accounts',
         component: () => import('@/pages/Accounts.vue'),
-        meta: { title: '账号管理' }
+        meta: { title: '账号管理', minPermission: 'operator' }
       },
       {
         path: 'users',
         name: 'users',
         component: () => import('@/pages/Users.vue'),
-        meta: { title: '用户管理' }
+        meta: { title: '用户管理', minPermission: 'admin' }
       },
       {
         path: 'config',
         name: 'config',
         component: () => import('@/pages/Config.vue'),
-        meta: { title: '配置' }
+        meta: { title: '配置', minPermission: 'admin' }
       },
       {
         path: 'tokens',
         name: 'tokens',
         component: () => import('@/pages/Tokens.vue'),
-        meta: { title: '令牌管理' }
+        meta: { title: '令牌管理', minPermission: 'operator' }
       },
       {
         path: 'stats',
         name: 'stats',
         component: () => import('@/pages/Stats.vue'),
-        meta: { title: '统计' }
+        meta: { title: '统计', minPermission: 'viewer' }
       },
       {
         path: 'logs',
         name: 'logs',
         component: () => import('@/pages/Logs.vue'),
-        meta: { title: '日志' }
+        meta: { title: '日志', minPermission: 'viewer' }
       },
       {
         path: 'dev/logs',
         name: 'dev-logs',
         component: () => import('@/pages/DevLogs.vue'),
-        meta: { title: '实时日志' }
+        meta: { title: '实时日志', minPermission: 'operator' }
       },
       {
         path: 'dev/pipeline',
         name: 'dev-pipeline',
         component: () => import('@/pages/DevPipeline.vue'),
-        meta: { title: '流水线' }
+        meta: { title: '流水线', minPermission: 'operator' }
       },
       {
         path: 'dev/test',
         name: 'dev-test',
         component: () => import('@/pages/DevTest.vue'),
-        meta: { title: '测试面板' }
+        meta: { title: '测试面板', minPermission: 'operator' }
       },
       {
         path: 'playground',
         name: 'playground',
         component: () => import('@/pages/Playground.vue'),
-        meta: { title: '操练场' }
+        meta: { title: '操练场', minPermission: 'operator' }
       },
       {
         path: 'about',
         name: 'about',
         component: () => import('@/pages/About.vue'),
-        meta: { title: '关于' }
+        meta: { title: '关于', minPermission: 'viewer' }
       }
     ]
   }
@@ -113,6 +127,10 @@ router.beforeEach(async (to) => {
     if (!isValid) {
       return '/login'
     }
+  }
+  const required = (to.meta.minPermission as Permission | undefined) ?? 'viewer'
+  if (!hasPermission(authStore.permission || 'viewer', required)) {
+    return '/dashboard'
   }
   return true
 })

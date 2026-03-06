@@ -16,7 +16,12 @@ from pydantic import BaseModel, Field
 
 from src.config.settings import load_settings
 from src.integrations.openai_api import OpenAIChatClient
-from src.middleware.auth import AdminContext, require_admin_token
+from src.middleware.auth import (
+    AdminContext,
+    require_admin_permission,
+    require_operator_permission,
+    require_viewer_permission,
+)
 from src.services.account_pool import AccountPool, NoAvailableAccountError
 from src.storage.account_store import AccountStore
 from src.storage.stats_store import StatsStore
@@ -137,11 +142,6 @@ def _sanitize_user(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _assert_admin_permission(ctx: AdminContext) -> None:
-    if ctx.permission != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permission required")
-
-
 def _get_account_with_health(store: AccountStore, account_id: int) -> dict[str, Any] | None:
     for item in store.list_accounts_with_health():
         if int(item.get("id", -1)) == account_id:
@@ -223,7 +223,7 @@ def _fallback_models_from_usage(stats_store: StatsStore) -> list[dict[str, str]]
 
 
 @router.get("/dashboard/stats")
-def get_dashboard_stats() -> dict[str, Any]:
+def get_dashboard_stats(_ctx: AdminContext = Depends(require_viewer_permission)) -> dict[str, Any]:
     store = _build_store()
     stats_store = _build_stats_store()
     accounts = store.list_accounts()
@@ -266,13 +266,13 @@ def get_dashboard_stats() -> dict[str, Any]:
 
 
 @router.get("/accounts")
-def list_accounts() -> list[dict[str, Any]]:
+def list_accounts(_ctx: AdminContext = Depends(require_operator_permission)) -> list[dict[str, Any]]:
     store = _build_store()
     return [_sanitize_account(item) for item in store.list_accounts_with_health()]
 
 
 @router.post("/accounts", status_code=status.HTTP_201_CREATED)
-def create_account(payload: AccountCreateRequest) -> dict[str, Any]:
+def create_account(payload: AccountCreateRequest, _ctx: AdminContext = Depends(require_operator_permission)) -> dict[str, Any]:
     store = _build_store()
     account_id = store.save_account(payload.model_dump())
     account = _get_account_with_health(store, account_id)
@@ -282,7 +282,11 @@ def create_account(payload: AccountCreateRequest) -> dict[str, Any]:
 
 
 @router.patch("/accounts/{account_id}")
-def patch_account_status(account_id: int, payload: AccountStatusPatchRequest) -> dict[str, Any]:
+def patch_account_status(
+    account_id: int,
+    payload: AccountStatusPatchRequest,
+    _ctx: AdminContext = Depends(require_operator_permission),
+) -> dict[str, Any]:
     store = _build_store()
     updated = store.update_account(account_id, {"status": payload.status})
     if not updated:
@@ -294,7 +298,7 @@ def patch_account_status(account_id: int, payload: AccountStatusPatchRequest) ->
 
 
 @router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_account(account_id: int) -> None:
+def delete_account(account_id: int, _ctx: AdminContext = Depends(require_operator_permission)) -> None:
     store = _build_store()
     deleted = store.delete_account(account_id)
     if not deleted:
@@ -302,7 +306,10 @@ def delete_account(account_id: int) -> None:
 
 
 @router.get("/accounts/{account_id}/password/reveal")
-def reveal_account_password(account_id: int) -> dict[str, Any]:
+def reveal_account_password(
+    account_id: int,
+    _ctx: AdminContext = Depends(require_admin_permission),
+) -> dict[str, Any]:
     store = _build_store()
     account = store.get_account(account_id)
     if account is None:
@@ -315,7 +322,10 @@ def reveal_account_password(account_id: int) -> dict[str, Any]:
 
 
 @router.get("/accounts/export")
-def export_accounts(ids: str | None = None) -> dict[str, Any]:
+def export_accounts(
+    ids: str | None = None,
+    _ctx: AdminContext = Depends(require_operator_permission),
+) -> dict[str, Any]:
     store = _build_store()
     all_accounts = store.list_accounts_with_health()
     accounts_map = {int(item["id"]): item for item in all_accounts}
@@ -367,7 +377,10 @@ def export_accounts(ids: str | None = None) -> dict[str, Any]:
 
 
 @router.post("/accounts/import")
-def import_accounts(payload: AccountImportRequest) -> dict[str, Any]:
+def import_accounts(
+    payload: AccountImportRequest,
+    _ctx: AdminContext = Depends(require_operator_permission),
+) -> dict[str, Any]:
     store = _build_store()
     strategy = payload.conflict_strategy.strip().lower()
     if strategy not in {"skip", "overwrite"}:
@@ -434,15 +447,13 @@ def import_accounts(payload: AccountImportRequest) -> dict[str, Any]:
 
 
 @router.get("/users")
-def list_users(ctx: AdminContext = Depends(require_admin_token)) -> list[dict[str, Any]]:
-    _assert_admin_permission(ctx)
+def list_users(_ctx: AdminContext = Depends(require_admin_permission)) -> list[dict[str, Any]]:
     store = _build_user_store()
     return [_sanitize_user(item) for item in store.list_users()]
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreateRequest, ctx: AdminContext = Depends(require_admin_token)) -> dict[str, Any]:
-    _assert_admin_permission(ctx)
+def create_user(payload: UserCreateRequest, _ctx: AdminContext = Depends(require_admin_permission)) -> dict[str, Any]:
     permission = payload.permission.strip().lower()
     if permission not in {"admin", "operator", "viewer"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="permission must be admin/operator/viewer")
@@ -470,9 +481,8 @@ def create_user(payload: UserCreateRequest, ctx: AdminContext = Depends(require_
 def patch_user(
     user_id: int,
     payload: UserPatchRequest,
-    ctx: AdminContext = Depends(require_admin_token),
+    _ctx: AdminContext = Depends(require_admin_permission),
 ) -> dict[str, Any]:
-    _assert_admin_permission(ctx)
     permission = payload.permission.strip().lower() if payload.permission is not None else None
     if permission is not None and permission not in {"admin", "operator", "viewer"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="permission must be admin/operator/viewer")
@@ -502,9 +512,8 @@ def patch_user(
 def reset_user_password(
     user_id: int,
     payload: UserResetPasswordRequest,
-    ctx: AdminContext = Depends(require_admin_token),
+    _ctx: AdminContext = Depends(require_admin_permission),
 ) -> dict[str, Any]:
-    _assert_admin_permission(ctx)
     next_password = payload.new_password or f"Tmp-{secrets.token_urlsafe(10)}"
     if len(next_password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="password too short")

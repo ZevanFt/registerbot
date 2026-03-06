@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from api.ws_pipeline import get_pipeline_event_hub
 from src.config.settings import load_settings
 from src.integrations.talentmail import TalentMailClient
+from src.middleware.auth import require_operator_permission
 from src.services.registration_service import RegistrationService
 from src.storage.account_store import AccountStore
 
-router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+router = APIRouter(
+    prefix="/api/pipeline",
+    tags=["pipeline"],
+    dependencies=[Depends(require_operator_permission)],
+)
 _registration_service: RegistrationService | None = None
 
 

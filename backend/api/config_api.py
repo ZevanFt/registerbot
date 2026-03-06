@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from src.config.settings import load_settings, save_settings
+from src.middleware.auth import require_admin_permission
 
-router = APIRouter(prefix="/api/config", tags=["config"])
+router = APIRouter(
+    prefix="/api/config",
+    tags=["config"],
+    dependencies=[Depends(require_admin_permission)],
+)
 
 
 @router.get("")

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from src.utils.log_collector import LogCollector
+from src.middleware.auth import require_operator_permission, require_viewer_permission
 
-router = APIRouter(prefix="/api/logs", tags=["logs"])
+router = APIRouter(
+    prefix="/api/logs",
+    tags=["logs"],
+    dependencies=[Depends(require_viewer_permission)],
+)
 
 
 @router.get("")
@@ -22,7 +27,7 @@ def get_logs(
 
 
 @router.delete("")
-def clear_logs() -> dict[str, str]:
+def clear_logs(_=Depends(require_operator_permission)) -> dict[str, str]:
     collector = LogCollector()
     collector.clear()
     return {"status": "cleared"}

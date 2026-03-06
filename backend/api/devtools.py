@@ -7,12 +7,17 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 
 from src.utils.log_collector import LogCollector
+from src.middleware.auth import require_operator_permission
 
-api_router = APIRouter(prefix="/api/devtools", tags=["devtools"])
+api_router = APIRouter(
+    prefix="/api/devtools",
+    tags=["devtools"],
+    dependencies=[Depends(require_operator_permission)],
+)
 ws_router = APIRouter()
 
 

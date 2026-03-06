@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from src.config.settings import load_settings
+from src.middleware.auth import require_viewer_permission
 from src.storage.stats_store import StatsStore
 
-router = APIRouter(prefix="/api/stats", tags=["stats"])
+router = APIRouter(
+    prefix="/api/stats",
+    tags=["stats"],
+    dependencies=[Depends(require_viewer_permission)],
+)
 
 
 def _build_store() -> StatsStore:

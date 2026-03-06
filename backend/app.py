@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -27,7 +27,7 @@ from api.ws_pipeline import api_router as pipeline_devtools_api_router
 from api.ws_pipeline import ws_router as ws_pipeline_router
 from src.config.settings import load_settings
 from src.integrations.openai_api import OpenAIChatClient, OpenAIRegistrationClient
-from src.middleware.auth import OpenAIProxyException, require_admin_token
+from src.middleware.auth import OpenAIProxyException
 from src.services.health_checker import HealthChecker
 from src.services.token_refresher import TokenRefresher, TokenRefresherSettings
 from src.storage.account_store import AccountStore
@@ -103,18 +103,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-admin_router = APIRouter(dependencies=[Depends(require_admin_token)])
-admin_router.include_router(dashboard_router)
-admin_router.include_router(tokens_router)
-admin_router.include_router(config_router)
-admin_router.include_router(logs_router)
-admin_router.include_router(stats_router)
-admin_router.include_router(pipeline_router)
-admin_router.include_router(devtools_api_router)
-admin_router.include_router(pipeline_devtools_api_router)
-
 app.include_router(auth_router)
-app.include_router(admin_router)
+app.include_router(dashboard_router)
+app.include_router(tokens_router)
+app.include_router(config_router)
+app.include_router(logs_router)
+app.include_router(stats_router)
+app.include_router(pipeline_router)
+app.include_router(devtools_api_router)
+app.include_router(pipeline_devtools_api_router)
 app.include_router(openai_proxy_router)
 app.include_router(ws_logs_router)
 app.include_router(ws_pipeline_router)
