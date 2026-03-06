@@ -9,7 +9,7 @@
       <div class="mt-4 grid gap-4 md:grid-cols-3">
         <StatCard label="总请求数" :value="store.summary.total_requests" />
         <StatCard label="总 Token 数" :value="formatNumber(store.summary.total_tokens)" />
-        <StatCard label="平均延迟" :value="`${store.summary.avg_latency.toFixed(2)} ms`" />
+        <StatCard label="平均延迟" :value="formattedAvgLatency" />
       </div>
     </section>
 
@@ -118,8 +118,11 @@ const rankedAccounts = computed(() => {
   return [...store.accountUsage].sort((a, b) => b.requests - a.requests)
 })
 
+const formattedAvgLatency = computed(() => `${Number(store.summary.avg_latency ?? 0).toFixed(2)} ms`)
+
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat('zh-CN').format(value)
+  const parsed = Number(value)
+  return new Intl.NumberFormat('zh-CN').format(Number.isFinite(parsed) ? parsed : 0)
 }
 
 onMounted(async () => {

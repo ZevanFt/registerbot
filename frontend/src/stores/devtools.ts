@@ -54,6 +54,18 @@ interface LogHistoryResponse {
   limit?: number
 }
 
+interface PipelineLastResponse {
+  events?: PipelineEvent[]
+}
+
+interface TestLastResponse {
+  output?: Omit<TestLine, 'timestamp'>[]
+}
+
+interface LogFilesResponse {
+  files?: string[]
+}
+
 function getToken(): string {
   if (typeof window === 'undefined') {
     return ''
@@ -113,13 +125,16 @@ export const useDevtoolsStore = defineStore('devtools', () => {
   const filteredLogs = computed(() => {
     const keyword = logsFilter.search.trim().toLowerCase()
     return logs.value.filter((entry) => {
-      const matchedLevel = logsFilter.level === 'ALL' || entry.level.toUpperCase() === logsFilter.level
-      const matchedSource = logsFilter.source === 'ALL' || entry.source === logsFilter.source
+      const levelText = String(entry.level ?? '').toUpperCase()
+      const sourceText = String(entry.source ?? '')
+      const messageText = String(entry.message ?? '')
+      const matchedLevel = logsFilter.level === 'ALL' || levelText === logsFilter.level
+      const matchedSource = logsFilter.source === 'ALL' || sourceText === logsFilter.source
       const matchedKeyword =
         keyword.length === 0 ||
-        entry.message.toLowerCase().includes(keyword) ||
-        entry.source.toLowerCase().includes(keyword) ||
-        entry.level.toLowerCase().includes(keyword)
+        messageText.toLowerCase().includes(keyword) ||
+        sourceText.toLowerCase().includes(keyword) ||
+        levelText.toLowerCase().includes(keyword)
       return matchedLevel && matchedSource && matchedKeyword
     })
   })
@@ -284,8 +299,14 @@ export const useDevtoolsStore = defineStore('devtools', () => {
     loading.value = true
     error.value = ''
     try {
-      const items = await apiGet<PipelineEvent[]>('/devtools/pipeline/last')
-      pipelineEvents.value = items
+      const response = await apiGet<PipelineEvent[] | PipelineLastResponse>('/devtools/pipeline/last')
+      if (Array.isArray(response)) {
+        pipelineEvents.value = response
+      } else if (Array.isArray(response?.events)) {
+        pipelineEvents.value = response.events
+      } else {
+        pipelineEvents.value = []
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载最近流水线失败'
       throw err
@@ -298,7 +319,8 @@ export const useDevtoolsStore = defineStore('devtools', () => {
     loading.value = true
     error.value = ''
     try {
-      const items = await apiGet<Omit<TestLine, 'timestamp'>[]>('/devtools/test/last')
+      const response = await apiGet<Omit<TestLine, 'timestamp'>[] | TestLastResponse>('/devtools/test/last')
+      const items = Array.isArray(response) ? response : Array.isArray(response?.output) ? response.output : []
       testOutput.value = items.map((item) => ({
         ...item,
         timestamp: new Date().toISOString()
@@ -317,7 +339,8 @@ export const useDevtoolsStore = defineStore('devtools', () => {
     loading.value = true
     error.value = ''
     try {
-      const files = await apiGet<string[]>('/devtools/logs/files')
+      const response = await apiGet<string[] | LogFilesResponse>('/devtools/logs/files')
+      const files = Array.isArray(response) ? response : Array.isArray(response?.files) ? response.files : []
       logFiles.value = files
       return files
     } catch (err) {

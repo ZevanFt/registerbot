@@ -29,6 +29,7 @@ export interface AppConfig {
     password: string
   }
   registration: {
+    mode: 'browser' | 'http'
     skip_phone_verification: boolean
     skip_upgrade_plus: boolean
     profile_name: string
@@ -93,6 +94,7 @@ export const defaultConfig: AppConfig = {
     password: ''
   },
   registration: {
+    mode: 'browser',
     skip_phone_verification: true,
     skip_upgrade_plus: true,
     profile_name: '',

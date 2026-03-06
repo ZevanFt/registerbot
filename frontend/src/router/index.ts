@@ -111,4 +111,14 @@ router.beforeEach(async (to) => {
   return true
 })
 
+router.onError((err) => {
+  // Keep app navigable when a route/component throws during navigation.
+  // The global error boundary in App.vue will display the actual error.
+  // eslint-disable-next-line no-console
+  console.error('[router-error]', err)
+  if (typeof window !== 'undefined') {
+    window.location.hash = '#/dashboard'
+  }
+})
+
 export default router

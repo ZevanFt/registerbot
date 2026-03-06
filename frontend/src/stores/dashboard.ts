@@ -15,6 +15,8 @@ export interface UsageStats {
   today_requests: number
   today_tokens: number
   current_rpm: number
+  success_rate: number
+  current_tpm: number
 }
 
 export interface DashboardModel {
@@ -25,6 +27,11 @@ export interface DashboardModel {
 export interface ServiceStats {
   uptime_seconds: number
   python_version: string
+  schedule_mode?: string
+  version?: string
+  openai_base_url?: string
+  chat2api_mode?: boolean
+  upstream_status?: string
 }
 
 export interface DashboardStats {
@@ -46,7 +53,9 @@ const defaultStats: DashboardStats = {
   usage: {
     today_requests: 0,
     today_tokens: 0,
-    current_rpm: 0
+    current_rpm: 0,
+    success_rate: 0,
+    current_tpm: 0
   },
   models: [],
   service: {
@@ -60,13 +69,31 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const loading = ref(false)
   const error = ref('')
 
+  const normalizeStats = (response: Partial<DashboardStats> | null | undefined): DashboardStats => {
+    return {
+      accounts: {
+        ...defaultStats.accounts,
+        ...(response?.accounts ?? {})
+      },
+      usage: {
+        ...defaultStats.usage,
+        ...(response?.usage ?? {})
+      },
+      models: Array.isArray(response?.models) ? response.models : defaultStats.models,
+      service: {
+        ...defaultStats.service,
+        ...(response?.service ?? {})
+      }
+    }
+  }
+
   const fetchStats = async () => {
     loading.value = true
     error.value = ''
 
     try {
       const response = await apiGet<DashboardStats>('/dashboard/stats')
-      stats.value = response
+      stats.value = normalizeStats(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载仪表盘数据失败'
       throw err

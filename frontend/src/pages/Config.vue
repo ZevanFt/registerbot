@@ -67,6 +67,14 @@
     <section class="card">
       <h2 class="card-title">注册设置</h2>
       <div class="grid gap-3 md:grid-cols-2">
+        <div>
+          <label class="lbl">注册模式</label>
+          <select v-model="form.registration.mode" class="ipt">
+            <option value="browser">browser (浏览器自动化)</option>
+            <option value="http">http (纯 HTTP)</option>
+          </select>
+          <p class="hint">browser 稳定性更高；http 速度更快但更容易被风控拦截</p>
+        </div>
         <div><label class="lbl">资料名称</label><input v-model="form.registration.profile_name" class="ipt" /></div>
         <div><label class="lbl">最大并发注册数</label><input v-model.number="form.registration.max_concurrent_registrations" type="number" class="ipt" /></div>
         <label class="toggle"><input type="checkbox" v-model="form.registration.skip_phone_verification" class="toggle-cb" /><span class="toggle-track" /><span>跳过手机验证</span></label>

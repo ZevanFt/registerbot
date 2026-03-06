@@ -128,7 +128,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(accounts[0]["openai_token"], "access-1")
         self.assertEqual(accounts[0]["refresh_token"], "refresh-1")
         self.assertEqual(accounts[0]["token_status"], "valid")
-        self.assertEqual(accounts[0]["status"], "registered")
+        self.assertEqual(accounts[0]["status"], "active")
         self.assertIsNotNone(accounts[0]["token_expires_at"])
 
     def test_registration_api_endpoint(self) -> None:
@@ -142,6 +142,22 @@ class RegistrationTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload["success"])
         self.assertEqual(payload["steps_failed"], 0)
+
+    def test_registration_mode_http_uses_http_steps(self) -> None:
+        settings = load_settings()
+        settings.registration.mode = "http"
+        service = RegistrationService(
+            settings=settings,
+            account_store=AccountStore(settings.storage.db_path, settings.storage.encryption_key),
+        )
+
+        steps = service._build_steps("http")
+        step_names = [step.name for step in steps]
+
+        self.assertIn("submit_registration", step_names)
+        self.assertIn("verify_email", step_names)
+        self.assertNotIn("browser_signup", step_names)
+        self.assertNotIn("browser_verify_email", step_names)
 
     def _run(self, awaitable):
         import asyncio

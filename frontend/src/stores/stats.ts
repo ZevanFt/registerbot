@@ -45,11 +45,80 @@ export const useStatsStore = defineStore('stats', () => {
   const loading = ref(false)
   const error = ref('')
 
+  const normalizeNumber = (value: unknown): number => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  const normalizeSummary = (value: unknown): StatsSummary => {
+    const raw = (value ?? {}) as Record<string, unknown>
+    return {
+      total_requests: normalizeNumber(raw.total_requests),
+      total_tokens: normalizeNumber(raw.total_tokens),
+      avg_latency: normalizeNumber(raw.avg_latency)
+    }
+  }
+
+  const normalizeHourly = (value: unknown): HourlyItem[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    return value.map((item) => {
+      const raw = (item ?? {}) as Record<string, unknown>
+      return {
+        hour: normalizeNumber(raw.hour),
+        requests: normalizeNumber(raw.requests)
+      }
+    })
+  }
+
+  const normalizeDaily = (value: unknown): DailyItem[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    return value.map((item) => {
+      const raw = (item ?? {}) as Record<string, unknown>
+      return {
+        date: String(raw.date ?? ''),
+        requests: normalizeNumber(raw.requests),
+        tokens: normalizeNumber(raw.tokens)
+      }
+    })
+  }
+
+  const normalizeModelDist = (value: unknown): ModelDistributionItem[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    return value.map((item) => {
+      const raw = (item ?? {}) as Record<string, unknown>
+      return {
+        model: String(raw.model ?? 'unknown'),
+        requests: normalizeNumber(raw.requests ?? raw.count)
+      }
+    })
+  }
+
+  const normalizeAccountUsage = (value: unknown): AccountUsageItem[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    return value.map((item) => {
+      const raw = (item ?? {}) as Record<string, unknown>
+      return {
+        email: String(raw.email ?? raw.account_id ?? 'unknown'),
+        requests: normalizeNumber(raw.requests),
+        total_tokens: normalizeNumber(raw.total_tokens ?? raw.tokens)
+      }
+    })
+  }
+
   const fetchSummary = async () => {
     loading.value = true
     error.value = ''
     try {
-      summary.value = await apiGet<StatsSummary>('/stats/summary')
+      const response = await apiGet<unknown>('/stats/summary')
+      summary.value = normalizeSummary(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载统计汇总失败'
       throw err
@@ -63,7 +132,8 @@ export const useStatsStore = defineStore('stats', () => {
     error.value = ''
     try {
       const query = date ? `?date=${encodeURIComponent(date)}` : ''
-      hourlyData.value = await apiGet<HourlyItem[]>(`/stats/hourly${query}`)
+      const response = await apiGet<unknown>(`/stats/hourly${query}`)
+      hourlyData.value = normalizeHourly(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载小时统计失败'
       throw err
@@ -77,7 +147,8 @@ export const useStatsStore = defineStore('stats', () => {
     error.value = ''
     try {
       const query = days ? `?days=${days}` : ''
-      dailyData.value = await apiGet<DailyItem[]>(`/stats/daily${query}`)
+      const response = await apiGet<unknown>(`/stats/daily${query}`)
+      dailyData.value = normalizeDaily(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载每日统计失败'
       throw err
@@ -90,7 +161,8 @@ export const useStatsStore = defineStore('stats', () => {
     loading.value = true
     error.value = ''
     try {
-      modelDist.value = await apiGet<ModelDistributionItem[]>('/stats/models')
+      const response = await apiGet<unknown>('/stats/models')
+      modelDist.value = normalizeModelDist(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载模型统计失败'
       throw err
@@ -103,7 +175,8 @@ export const useStatsStore = defineStore('stats', () => {
     loading.value = true
     error.value = ''
     try {
-      accountUsage.value = await apiGet<AccountUsageItem[]>('/stats/accounts')
+      const response = await apiGet<unknown>('/stats/accounts')
+      accountUsage.value = normalizeAccountUsage(response)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载账号用量失败'
       throw err

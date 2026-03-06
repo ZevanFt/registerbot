@@ -2,19 +2,39 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from collections import Counter
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.config.settings import load_settings
+from src.integrations.openai_api import OpenAIChatClient
+from src.services.account_pool import AccountPool, NoAvailableAccountError
 from src.storage.account_store import AccountStore
+from src.storage.stats_store import StatsStore
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 _SERVICE_STARTED_AT = time.time()
+_CHAT2API_MODELS = [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4",
+    "gpt-3.5-turbo",
+    "o1-preview",
+    "o1-mini",
+    "o3-mini",
+    "gpt-5.3-codex",
+    "gpt-5-codex-mini",
+    "gpt-5.2-codex",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5-codex",
+]
 
 
 class AccountCreateRequest(BaseModel):
@@ -35,22 +55,112 @@ def _build_store() -> AccountStore:
     return AccountStore(settings.storage.db_path, settings.storage.encryption_key)
 
 
+def _build_stats_store() -> StatsStore:
+    settings = load_settings()
+    return StatsStore(settings.storage.stats_db_path)
+
+
 def _sanitize_account(account: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": account["id"],
         "email": account["email"],
         "plan": account["plan"],
         "status": account["status"],
+        "runtime_status": account.get("runtime_status"),
+        "token_status": account.get("token_status"),
+        "consecutive_failures": int(account.get("consecutive_failures") or 0),
+        "last_failure_reason": account.get("last_failure_reason"),
         "created_at": account["created_at"],
         "updated_at": account["updated_at"],
     }
 
 
+def _get_account_with_health(store: AccountStore, account_id: int) -> dict[str, Any] | None:
+    for item in store.list_accounts_with_health():
+        if int(item.get("id", -1)) == account_id:
+            return item
+    return None
+
+
+def _is_chat2api_mode(base_url: str) -> bool:
+    return "localhost" in base_url or "127.0.0.1" in base_url
+
+
+def _build_chat_client(timeout_seconds: float = 8.0) -> OpenAIChatClient:
+    settings = load_settings()
+    base_url = settings.openai.base_url
+    if _is_chat2api_mode(base_url):
+        proxy = ""
+    else:
+        proxy = settings.network.openai_proxy or settings.network.http_proxy
+    return OpenAIChatClient(
+        base_url=base_url,
+        timeout=min(settings.openai.timeout_seconds, timeout_seconds),
+        stream_timeout=min(settings.openai.stream_timeout_seconds, timeout_seconds),
+        proxy=proxy,
+    )
+
+
+async def _load_available_models(store: AccountStore) -> tuple[list[dict[str, str]], bool]:
+    settings = load_settings()
+    if _is_chat2api_mode(settings.openai.base_url):
+        return [{"id": model_id, "name": model_id} for model_id in _CHAT2API_MODELS], True
+
+    pool = AccountPool(
+        account_store=store,
+        cooldown_seconds=settings.proxy.cooldown_seconds,
+        failure_threshold=settings.proxy.failure_threshold,
+    )
+    try:
+        account = pool.acquire_account()
+    except NoAvailableAccountError:
+        return [], False
+
+    try:
+        payload = await _build_chat_client().list_models(str(account["openai_token"]))
+        raw_models = payload.get("data", []) if isinstance(payload, dict) else []
+        if not isinstance(raw_models, list):
+            return [], False
+        models: list[dict[str, str]] = []
+        for item in raw_models:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id", "")).strip()
+            if not model_id:
+                continue
+            models.append({"id": model_id, "name": model_id})
+        pool.mark_success(int(account["id"]))
+        return models, True
+    except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException):
+        pool.mark_failure(int(account["id"]), "list_models_failed")
+        return [], False
+
+
+def _fallback_models_from_usage(stats_store: StatsStore) -> list[dict[str, str]]:
+    distribution = stats_store.get_model_distribution()
+    models: list[dict[str, str]] = []
+    for item in distribution:
+        model_id = str(item.get("model", "")).strip()
+        if not model_id:
+            continue
+        models.append({"id": model_id, "name": model_id})
+    return models
+
+
 @router.get("/dashboard/stats")
 def get_dashboard_stats() -> dict[str, Any]:
     store = _build_store()
+    stats_store = _build_stats_store()
     accounts = store.list_accounts()
     statuses = Counter(str(item.get("status", "")) for item in accounts)
+    today_summary = stats_store.get_today_summary()
+    current_rpm = stats_store.get_recent_rpm()
+    current_tpm = stats_store.get_recent_tpm()
+    success_rate = stats_store.get_today_success_rate()
+    discovered_models, upstream_ok = asyncio.run(_load_available_models(store))
+    models = discovered_models or _fallback_models_from_usage(stats_store)
+    settings = load_settings()
+    chat2api_mode = _is_chat2api_mode(settings.openai.base_url)
     return {
         "accounts": {
             "total": len(accounts),
@@ -61,21 +171,21 @@ def get_dashboard_stats() -> dict[str, Any]:
             "abandoned": statuses.get("abandoned", 0),
         },
         "usage": {
-            "today_requests": 0,
-            "today_tokens": 0,
-            "current_rpm": 0,
+            "today_requests": int(today_summary.get("total_requests", 0)),
+            "today_tokens": int(today_summary.get("total_tokens", 0)),
+            "current_rpm": current_rpm,
+            "success_rate": success_rate,
+            "current_tpm": current_tpm,
         },
-        "models": [
-            {"id": "codex/gpt-5-codex-mini", "name": "GPT-5 Codex Mini"},
-            {"id": "codex/gpt-5-codex", "name": "GPT-5 Codex"},
-            {"id": "codex/gpt-5.1-codex", "name": "GPT-5.1 Codex"},
-            {"id": "codex/gpt-5.1-codex-max", "name": "GPT-5.1 Codex Max"},
-        ],
+        "models": models,
         "service": {
             "uptime_seconds": int(time.time() - _SERVICE_STARTED_AT),
             "schedule_mode": "round-robin",
             "version": "1.0.0",
             "python_version": sys.version.split()[0],
+            "openai_base_url": settings.openai.base_url,
+            "chat2api_mode": chat2api_mode,
+            "upstream_status": "reachable" if upstream_ok else "unreachable",
         },
     }
 
@@ -83,14 +193,14 @@ def get_dashboard_stats() -> dict[str, Any]:
 @router.get("/accounts")
 def list_accounts() -> list[dict[str, Any]]:
     store = _build_store()
-    return [_sanitize_account(item) for item in store.list_accounts()]
+    return [_sanitize_account(item) for item in store.list_accounts_with_health()]
 
 
 @router.post("/accounts", status_code=status.HTTP_201_CREATED)
 def create_account(payload: AccountCreateRequest) -> dict[str, Any]:
     store = _build_store()
     account_id = store.save_account(payload.model_dump())
-    account = store.get_account(account_id)
+    account = _get_account_with_health(store, account_id)
     if account is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Account create failed")
     return _sanitize_account(account)
@@ -102,7 +212,7 @@ def patch_account_status(account_id: int, payload: AccountStatusPatchRequest) ->
     updated = store.update_account(account_id, {"status": payload.status})
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    account = store.get_account(account_id)
+    account = _get_account_with_health(store, account_id)
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     return _sanitize_account(account)

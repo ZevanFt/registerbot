@@ -131,7 +131,8 @@ const STEP_KEYS = Object.keys(STEP_LABELS)
 
 const latestEventByStep = computed(() => {
   const map = new Map<string, PipelineEvent>()
-  for (const event of store.pipelineEvents) {
+  const events = Array.isArray(store.pipelineEvents) ? store.pipelineEvents : []
+  for (const event of events) {
     map.set(event.step_name, event)
   }
   return map

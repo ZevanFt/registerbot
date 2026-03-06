@@ -18,11 +18,12 @@ export const useTokensStore = defineStore('tokens', () => {
   const loading = ref(false)
   const error = ref('')
 
-  const fetchTokens = async () => {
+  const fetchTokens = async (reveal = false) => {
     loading.value = true
     error.value = ''
     try {
-      tokens.value = await apiGet<Token[]>('/tokens')
+      const query = reveal ? '?reveal=true' : ''
+      tokens.value = await apiGet<Token[]>(`/tokens${query}`)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载令牌失败'
       throw err

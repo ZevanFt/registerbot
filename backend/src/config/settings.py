@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -38,6 +38,7 @@ class OpenAISettings(BaseModel):
 class RegistrationSettings(BaseModel):
     """Registration automation behavior settings."""
 
+    mode: Literal["browser", "http"] = "browser"
     skip_phone_verification: bool = True
     skip_upgrade_plus: bool = True
     profile_name: str = "API User"

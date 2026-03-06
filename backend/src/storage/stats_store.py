@@ -42,6 +42,39 @@ class StatsStore:
             ).fetchone()
         return {"total_requests": row[0], "total_tokens": row[1], "avg_latency": 0}
 
+    def get_recent_rpm(self, window_seconds: int = 60) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT timestamp FROM usage_logs").fetchall()
+        return sum(1 for row in rows if self._is_recent(str(row[0]), cutoff))
+
+    def get_recent_tpm(self, window_seconds: int = 60) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT timestamp, request_tokens, response_tokens FROM usage_logs").fetchall()
+        total_tokens = 0
+        for row in rows:
+            if self._is_recent(str(row[0]), cutoff):
+                total_tokens += int(row[1] or 0) + int(row[2] or 0)
+        return total_tokens
+
+    def get_today_success_rate(self) -> float:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with sqlite3.connect(self.db_path) as conn:
+            total, success = conn.execute(
+                """
+                SELECT
+                    COUNT(*) as total,
+                    COALESCE(SUM(CASE WHEN status_code < 400 THEN 1 ELSE 0 END), 0) as success
+                FROM usage_logs
+                WHERE timestamp LIKE ?
+                """,
+                (f"{today}%",),
+            ).fetchone()
+        if int(total or 0) == 0:
+            return 0.0
+        return round((int(success or 0) / int(total)) * 100, 2)
+
     def append_usage_log(
         self,
         timestamp: str,
@@ -111,3 +144,12 @@ class StatsStore:
                 "SELECT account_id, COUNT(*) as requests, COALESCE(SUM(request_tokens + response_tokens), 0) as tokens FROM usage_logs WHERE account_id IS NOT NULL GROUP BY account_id ORDER BY requests DESC"
             ).fetchall()
         return [{"account_id": row[0], "requests": row[1], "tokens": row[2]} for row in rows]
+
+    def _is_recent(self, timestamp: str, cutoff: datetime) -> bool:
+        try:
+            parsed = datetime.fromisoformat(timestamp)
+        except ValueError:
+            return False
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed >= cutoff

@@ -11,6 +11,7 @@ import asyncio
 import base64
 import random
 import secrets
+from datetime import datetime, timezone
 from hashlib import sha256
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -170,9 +171,10 @@ class BrowserVerifyEmailStep(Step):
                 ]
                 random_name = f"{random.choice(first_names)} {random.choice(last_names)}"
 
-                # Generate random birthday (18-35 years old), MM/DD/YYYY
-                age = random.randint(18, 35)
-                birth_year = 2026 - age
+                # Generate random birthday (20-50 years old), MM/DD/YYYY
+                current_year = datetime.now(timezone.utc).year
+                age = random.randint(20, 50)
+                birth_year = current_year - age
                 birth_month = random.randint(1, 12)
                 birth_day = random.randint(1, 28)  # safe for all months
                 birthday_str = f"{birth_month:02d}/{birth_day:02d}/{birth_year}"
@@ -206,33 +208,80 @@ class BrowserVerifyEmailStep(Step):
                 month_label = month_names[birth_month]
                 birthday_filled = False
 
-                # Strategy 1: Native <select> elements inside Birthday fieldset
+                # Strategy 1: React Aria DateField spinbutton segments
+                # Typical structure: Month / Day / Year as role=spinbutton.
                 try:
-                    selects = page.locator("select:visible")
-                    select_count = await selects.count()
-                    if select_count >= 3:
-                        # Month select: try by label/value
-                        month_sel = selects.nth(0)
-                        await month_sel.select_option(label=month_label)
-                        await asyncio.sleep(0.3)
-                        # Day select
-                        day_sel = selects.nth(1)
-                        await day_sel.select_option(value=str(birth_day))
-                        await asyncio.sleep(0.3)
-                        # Year select
-                        year_sel = selects.nth(2)
-                        await year_sel.select_option(value=str(birth_year))
-                        await asyncio.sleep(0.3)
+                    segments = page.locator('[role="spinbutton"]')
+                    seg_count = await segments.count()
+                    if seg_count >= 3:
+                        values = [f"{birth_month:02d}", f"{birth_day:02d}", str(birth_year)]
+                        for idx, val in enumerate(values):
+                            seg = segments.nth(idx)
+                            await seg.click()
+                            # Some segments support fill, others require typing.
+                            try:
+                                await seg.fill(val)
+                            except Exception:
+                                await page.keyboard.press("Control+a")
+                                await page.keyboard.type(val)
+                            await asyncio.sleep(0.2)
                         birthday_filled = True
                         logger.info(
                             "about_you_birthday_filled",
-                            mode="select_option",
+                            mode="spinbutton",
                             birthday=f"{month_label} {birth_day}, {birth_year}",
                         )
                 except Exception:
-                    logger.debug("about_you_birthday_select_option_failed", exc_info=True)
+                    logger.debug("about_you_birthday_spinbutton_failed", exc_info=True)
 
-                # Strategy 2: Click dropdown and pick option text
+                # Strategy 2: Try a direct date input field (MM/DD/YYYY)
+                if not birthday_filled:
+                    try:
+                        date_inputs = page.locator(
+                            'input[type="date"], input[placeholder*="MM"], input[placeholder*="mm"], input[name*="birth"]'
+                        )
+                        if await date_inputs.count() > 0:
+                            date_input = date_inputs.first
+                            await date_input.click()
+                            await date_input.fill(birthday_str)
+                            await asyncio.sleep(0.3)
+                            birthday_filled = True
+                            logger.info(
+                                "about_you_birthday_filled",
+                                mode="direct_input",
+                                birthday=f"{month_label} {birth_day}, {birth_year}",
+                            )
+                    except Exception:
+                        logger.debug("about_you_birthday_direct_input_failed", exc_info=True)
+
+                # Strategy 3: Native <select> elements inside Birthday fieldset
+                if not birthday_filled:
+                    try:
+                        selects = page.locator("select:visible")
+                        select_count = await selects.count()
+                        if select_count >= 3:
+                            # Month select: try by label/value
+                            month_sel = selects.nth(0)
+                            await month_sel.select_option(label=month_label)
+                            await asyncio.sleep(0.3)
+                            # Day select
+                            day_sel = selects.nth(1)
+                            await day_sel.select_option(value=str(birth_day))
+                            await asyncio.sleep(0.3)
+                            # Year select
+                            year_sel = selects.nth(2)
+                            await year_sel.select_option(value=str(birth_year))
+                            await asyncio.sleep(0.3)
+                            birthday_filled = True
+                            logger.info(
+                                "about_you_birthday_filled",
+                                mode="select_option",
+                                birthday=f"{month_label} {birth_day}, {birth_year}",
+                            )
+                    except Exception:
+                        logger.debug("about_you_birthday_select_option_failed", exc_info=True)
+
+                # Strategy 4: Click dropdown and pick option text
                 if not birthday_filled:
                     try:
                         birthday_group = page.locator("fieldset, [data-testid*='birthday'], .birthday")
@@ -253,7 +302,7 @@ class BrowserVerifyEmailStep(Step):
                     except Exception:
                         logger.debug("about_you_birthday_fieldset_failed", exc_info=True)
 
-                # Strategy 3: JavaScript fallback — set all select values directly
+                # Strategy 5: JavaScript fallback — set all select values directly
                 if not birthday_filled:
                     try:
                         await page.evaluate(
@@ -291,6 +340,12 @@ class BrowserVerifyEmailStep(Step):
                     except Exception:
                         logger.warning("about_you_birthday_all_strategies_failed", exc_info=True)
 
+                if not birthday_filled:
+                    return StepResult(
+                        success=False,
+                        error="about_you_birthday_not_filled",
+                    )
+
                 await asyncio.sleep(1)
 
                 try:
@@ -305,15 +360,23 @@ class BrowserVerifyEmailStep(Step):
                     'button:has-text("Continue")',
                     'button[type="submit"]',
                 ]
+                finish_clicked = False
                 for sel in finish_selectors:
                     try:
                         btn = page.locator(sel).first
                         if await btn.is_visible():
                             await btn.click()
                             logger.info("about_you_finish_clicked", selector=sel)
+                            finish_clicked = True
                             break
                     except Exception:
                         continue
+
+                if not finish_clicked:
+                    return StepResult(
+                        success=False,
+                        error="about_you_finish_button_not_found",
+                    )
 
                 # Wait for navigation away from about-you page
                 try:
@@ -454,12 +517,100 @@ class BrowserVerifyEmailStep(Step):
                 "registered": True,
                 "final_url": final_url,
             }
+            # If chatgpt.com session API didn't return an access token,
+            # fall back to an explicit PKCE authorize flow to extract
+            # authorization_code for the next token exchange step.
+            if not access_token:
+                authorization_code = ""
+                try:
+                    code_verifier, code_challenge = _generate_pkce_pair()
+                    oauth_state = secrets.token_urlsafe(24)
+                    oauth_nonce = secrets.token_urlsafe(24)
+
+                    authorize_params = {
+                        "client_id": settings.openai.oauth_client_id,
+                        "response_type": "code",
+                        "redirect_uri": settings.openai.register_callback_url,
+                        "scope": "openid profile email offline_access",
+                        "code_challenge": code_challenge,
+                        "code_challenge_method": "S256",
+                        "state": oauth_state,
+                        "nonce": oauth_nonce,
+                    }
+                    authorize_url = (
+                        f"{settings.openai.authorize_url}?{urlencode(authorize_params)}"
+                    )
+                    logger.info(
+                        "session_token_missing_pkce_fallback_start",
+                        email=context.email,
+                        authorize_url=settings.openai.authorize_url,
+                    )
+
+                    await page.goto(authorize_url, wait_until="domcontentloaded", timeout=30000)
+
+                    # Some consent pages may need an explicit click.
+                    for sel in [
+                        'button:has-text("Continue")',
+                        'button:has-text("Authorize")',
+                        'button:has-text("Allow")',
+                        'button[type="submit"]',
+                    ]:
+                        try:
+                            btn = page.locator(sel).first
+                            if await btn.is_visible():
+                                await btn.click()
+                                await asyncio.sleep(1)
+                                break
+                        except Exception:
+                            continue
+
+                    try:
+                        await page.wait_for_url(
+                            lambda u: (
+                                u.startswith(settings.openai.register_callback_url)
+                                or ("code=" in u and "state=" in u)
+                            ),
+                            timeout=30000,
+                        )
+                    except Exception:
+                        pass
+
+                    current_oauth_url = page.url
+                    query = parse_qs(urlparse(current_oauth_url).query)
+                    authorization_code = str(query.get("code", [""])[0])
+
+                    if authorization_code:
+                        logger.info("pkce_fallback_authorization_code_extracted", email=context.email)
+                        result_data["authorization_code"] = authorization_code
+                        result_data["metadata"] = {
+                            **context.metadata,
+                            "code_verifier": code_verifier,
+                            "oauth_state": oauth_state,
+                        }
+                    else:
+                        logger.warning(
+                            "pkce_fallback_authorization_code_missing",
+                            email=context.email,
+                            url=current_oauth_url,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "pkce_fallback_failed",
+                        email=context.email,
+                        error=str(exc),
+                    )
+
             if access_token:
                 result_data["access_token"] = access_token
             if refresh_token:
                 result_data["refresh_token"] = refresh_token
             if expires_in:
                 result_data["expires_in"] = expires_in
+            if not access_token and "authorization_code" not in result_data:
+                return StepResult(
+                    success=False,
+                    error="authorization_not_obtained: neither access_token nor authorization_code available",
+                )
 
             return StepResult(success=True, data=result_data)
 

@@ -9,6 +9,10 @@ export interface Account {
   email: string
   plan: 'free' | 'plus'
   status: AccountStatus
+  runtime_status: string | null
+  token_status: string | null
+  consecutive_failures: number
+  last_failure_reason: string | null
   created_at: string
   updated_at: string
 }

@@ -13,7 +13,9 @@ from src.steps import (
     CreateTempEmailStep,
     SetPasswordStep,
     SetProfileStep,
+    SubmitRegistrationStep,
     UpgradePlusStep,
+    VerifyEmailStep,
     VerifyPhoneStep,
     WaitForVerificationCodeStep,
 )
@@ -34,19 +36,11 @@ class RegistrationService:
         password: str,
         event_callback: Callable[[dict[str, object]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
+        registration_mode = str(getattr(self.settings.registration, "mode", "browser")).lower()
         pipeline = Pipeline(
             name="openai_registration",
             description="OpenAI registration automation pipeline",
-            steps=[
-                CreateTempEmailStep(),
-                BrowserSignupStep(),
-                WaitForVerificationCodeStep(),
-                BrowserVerifyEmailStep(),
-                VerifyPhoneStep(),
-                SetPasswordStep(),
-                SetProfileStep(),
-                UpgradePlusStep(),
-            ],
+            steps=self._build_steps(registration_mode),
         )
         initial_context = PipelineContext(
             email=email,
@@ -81,7 +75,8 @@ class RegistrationService:
                     "refresh_token": final_context.get("refresh_token"),
                     "token_expires_at": expires_at,
                     "token_status": "valid",
-                    "status": "registered",
+                    # Account is ready for serving traffic once token is available.
+                    "status": "active",
                     "plan": "free",
                 }
             )
@@ -103,3 +98,26 @@ class RegistrationService:
             for key, value in step_result.data.items():
                 context = context.set(key, value)
         return context
+
+    def _build_steps(self, mode: str) -> list[Any]:
+        if mode == "http":
+            return [
+                CreateTempEmailStep(),
+                SubmitRegistrationStep(),
+                WaitForVerificationCodeStep(),
+                VerifyEmailStep(),
+                VerifyPhoneStep(),
+                SetPasswordStep(),
+                SetProfileStep(),
+                UpgradePlusStep(),
+            ]
+        return [
+            CreateTempEmailStep(),
+            BrowserSignupStep(),
+            WaitForVerificationCodeStep(),
+            BrowserVerifyEmailStep(),
+            VerifyPhoneStep(),
+            SetPasswordStep(),
+            SetProfileStep(),
+            UpgradePlusStep(),
+        ]

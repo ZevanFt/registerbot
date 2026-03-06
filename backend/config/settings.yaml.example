@@ -4,6 +4,8 @@ talentmail:
   password: ''
 openai:
   register_url: 'https://chat.openai.com'
+registration:
+  mode: 'browser'
 storage:
   db_path: 'data/accounts.db'
   encryption_key: ''

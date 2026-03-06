@@ -65,15 +65,59 @@
       </StatCard>
     </section>
 
-    <section class="grid gap-4 md:grid-cols-3">
-      <StatCard label="今日请求" :value="store.stats.usage.today_requests" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600" />
-      <StatCard label="今日TOKEN" :value="formattedTokens" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600" />
-      <StatCard label="当前RPM" :value="store.stats.usage.current_rpm" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600" />
+    <section class="grid gap-4 md:grid-cols-5">
+      <StatCard label="今日请求" :value="store.stats.usage.today_requests" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600">
+        <template #icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="m13 5 7 7-7 7" />
+          </svg>
+        </template>
+      </StatCard>
+      <StatCard label="今日TOKEN" :value="formattedTokens" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600">
+        <template #icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h8" />
+          </svg>
+        </template>
+      </StatCard>
+      <StatCard label="当前RPM" :value="store.stats.usage.current_rpm" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600">
+        <template #icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <circle cx="12" cy="12" r="9" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
+          </svg>
+        </template>
+      </StatCard>
+      <StatCard label="当前TPM" :value="formattedCurrentTpm" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600">
+        <template #icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 8h8a3 3 0 1 1 0 6H9a3 3 0 1 0 0 6h8" />
+          </svg>
+        </template>
+      </StatCard>
+      <StatCard label="成功率" :value="formattedSuccessRate" value-class="text-blue-500" icon-bg-class="bg-blue-100 text-blue-600">
+        <template #icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </template>
+      </StatCard>
     </section>
 
     <section class="grid gap-4 lg:grid-cols-2">
       <ModelList :models="store.stats.models" />
-      <ServiceStatus :uptime-seconds="store.stats.service.uptime_seconds" :python-version="store.stats.service.python_version" />
+      <ServiceStatus
+        :uptime-seconds="store.stats.service.uptime_seconds"
+        :python-version="store.stats.service.python_version"
+        :schedule-mode="store.stats.service.schedule_mode"
+        :version="store.stats.service.version"
+        :upstream-status="store.stats.service.upstream_status"
+        :openai-base-url="store.stats.service.openai_base_url"
+        :chat2api-mode="store.stats.service.chat2api_mode"
+      />
     </section>
   </div>
 </template>
@@ -87,7 +131,9 @@ import { useDashboardStore } from '@/stores/dashboard'
 
 const store = useDashboardStore()
 
-const formattedTokens = computed(() => formatTokenCount(store.stats.usage.today_tokens))
+const formattedTokens = computed(() => formatTokenCount(Number(store.stats.usage.today_tokens ?? 0)))
+const formattedCurrentTpm = computed(() => formatTokenCount(Number(store.stats.usage.current_tpm ?? 0)))
+const formattedSuccessRate = computed(() => `${Number(store.stats.usage.success_rate ?? 0).toFixed(2)}%`)
 
 function formatTokenCount(value: number): string {
   if (value >= 1_000_000) {

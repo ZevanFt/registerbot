@@ -32,6 +32,10 @@
               <th class="px-3 py-2 font-medium">邮箱</th>
               <th class="px-3 py-2 font-medium">套餐</th>
               <th class="px-3 py-2 font-medium">状态</th>
+              <th class="px-3 py-2 font-medium">运行状态</th>
+              <th class="px-3 py-2 font-medium">Token状态</th>
+              <th class="px-3 py-2 font-medium">失败次数</th>
+              <th class="px-3 py-2 font-medium">最后错误</th>
               <th class="px-3 py-2 font-medium">创建时间</th>
               <th class="px-3 py-2 font-medium">操作</th>
             </tr>
@@ -49,6 +53,20 @@
                 <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" :class="statusClass(account.status)">
                   {{ account.status }}
                 </span>
+              </td>
+              <td class="px-3 py-3">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" :class="runtimeStatusClass(account.runtime_status)">
+                  {{ account.runtime_status || 'unknown' }}
+                </span>
+              </td>
+              <td class="px-3 py-3">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" :class="tokenStatusClass(account.token_status)">
+                  {{ account.token_status || 'unknown' }}
+                </span>
+              </td>
+              <td class="px-3 py-3 tabular-nums">{{ account.consecutive_failures ?? 0 }}</td>
+              <td class="max-w-[20rem] px-3 py-3 text-xs text-slate-500 dark:text-slate-400">
+                {{ formatFailureReason(account.last_failure_reason) }}
               </td>
               <td class="px-3 py-3 tabular-nums">{{ formatDate(account.created_at) }}</td>
               <td class="px-3 py-3">
@@ -71,7 +89,7 @@
               </td>
             </tr>
             <tr v-if="!store.loading && filteredAccounts.length === 0">
-              <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">暂无账号</td>
+              <td colspan="10" class="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">暂无账号</td>
             </tr>
           </tbody>
         </table>
@@ -163,7 +181,10 @@ const filteredAccounts = computed(() => {
       account.email.toLowerCase().includes(q) ||
       String(account.id).includes(q) ||
       account.plan.toLowerCase().includes(q) ||
-      account.status.toLowerCase().includes(q)
+      account.status.toLowerCase().includes(q) ||
+      String(account.runtime_status || '').toLowerCase().includes(q) ||
+      String(account.token_status || '').toLowerCase().includes(q) ||
+      String(account.last_failure_reason || '').toLowerCase().includes(q)
     )
   })
 })
@@ -181,12 +202,36 @@ function statusClass(status: AccountStatus): string {
   return statusClassMap[status]
 }
 
+function runtimeStatusClass(value: string | null): string {
+  const status = (value || 'unknown').toLowerCase()
+  if (status === 'active') return 'bg-emerald-100 text-emerald-700'
+  if (status === 'cooling' || status === 'usage_limited') return 'bg-amber-100 text-amber-700'
+  if (status === 'banned') return 'bg-red-100 text-red-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function tokenStatusClass(value: string | null): string {
+  const status = (value || 'unknown').toLowerCase()
+  if (status === 'valid' || status === 'expiring') return 'bg-emerald-100 text-emerald-700'
+  if (status === 'refreshing') return 'bg-amber-100 text-amber-700'
+  if (status === 'expired' || status === 'invalid_grant' || status === 'refresh_failed') {
+    return 'bg-red-100 text-red-700'
+  }
+  return 'bg-slate-100 text-slate-700'
+}
+
 function formatDate(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
   }
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatFailureReason(value: string | null): string {
+  if (!value) return '-'
+  if (value.length <= 80) return value
+  return `${value.slice(0, 80)}...`
 }
 
 function openCreateModal() {
