@@ -35,6 +35,7 @@ htmlcov/
 # Runtime data & debug screenshots
 backend/data/
 backend/logs/
+.run/
 
 # Frontend
 frontend/node_modules/
