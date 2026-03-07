@@ -56,6 +56,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '配置', minPermission: 'admin' }
       },
       {
+        path: 'registration-server',
+        name: 'registration-server',
+        component: () => import('@/pages/RegistrationServer.vue'),
+        meta: { title: '注册服务器', minPermission: 'admin' }
+      },
+      {
+        path: 'model-truth-probe',
+        name: 'model-truth-probe',
+        component: () => import('@/pages/ModelTruthProbe.vue'),
+        meta: { title: '模型真值探测', minPermission: 'admin' }
+      },
+      {
         path: 'tokens',
         name: 'tokens',
         component: () => import('@/pages/Tokens.vue'),
@@ -77,19 +89,19 @@ const routes: RouteRecordRaw[] = [
         path: 'dev/logs',
         name: 'dev-logs',
         component: () => import('@/pages/DevLogs.vue'),
-        meta: { title: '实时日志', minPermission: 'operator' }
+        meta: { title: '实时日志', minPermission: 'admin' }
       },
       {
         path: 'dev/pipeline',
         name: 'dev-pipeline',
         component: () => import('@/pages/DevPipeline.vue'),
-        meta: { title: '流水线', minPermission: 'operator' }
+        meta: { title: '流水线', minPermission: 'admin' }
       },
       {
         path: 'dev/test',
         name: 'dev-test',
         component: () => import('@/pages/DevTest.vue'),
-        meta: { title: '测试面板', minPermission: 'operator' }
+        meta: { title: '测试面板', minPermission: 'admin' }
       },
       {
         path: 'playground',

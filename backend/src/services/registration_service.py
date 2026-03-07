@@ -57,7 +57,9 @@ class RegistrationService:
                 "steps_failed": result.steps_failed,
                 "total_duration": result.total_duration,
                 "errors": {name: item.error for name, item in result.results.items() if item.error},
+                "step_results": self._serialize_step_results(result.results),
                 "email": final_context.email,
+                "mode": registration_mode,
             }
             if not result.success:
                 self._status["last_result"] = response
@@ -67,7 +69,7 @@ class RegistrationService:
             expires_at = (
                 datetime.now(timezone.utc) + timedelta(seconds=expires_in if expires_in > 0 else 86400)
             ).isoformat()
-            self.account_store.save_account(
+            account_id = self.account_store.save_account(
                 {
                     "email": final_context.email or email,
                     "password": final_context.password or password,
@@ -80,6 +82,7 @@ class RegistrationService:
                     "plan": "free",
                 }
             )
+            response["account_id"] = account_id
             self._status["last_result"] = response
             return response
         finally:
@@ -121,3 +124,21 @@ class RegistrationService:
             SetProfileStep(),
             UpgradePlusStep(),
         ]
+
+    def _serialize_step_results(self, results: dict[str, Any]) -> list[dict[str, Any]]:
+        step_items: list[dict[str, Any]] = []
+        for step_name, step_result in results.items():
+            status = "success" if step_result.success else "failed"
+            if step_result.skip_reason:
+                status = "skipped"
+            step_items.append(
+                {
+                    "step": step_name,
+                    "status": status,
+                    "success": bool(step_result.success),
+                    "error": step_result.error,
+                    "skip_reason": step_result.skip_reason,
+                    "duration_ms": int((step_result.duration or 0.0) * 1000),
+                }
+            )
+        return step_items

@@ -7,13 +7,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from src.middleware.auth import require_operator_permission
+from src.middleware.auth import require_admin_permission
 
 ws_router = APIRouter()
 api_router = APIRouter(
     prefix="/api/devtools",
     tags=["devtools"],
-    dependencies=[Depends(require_operator_permission)],
+    dependencies=[Depends(require_admin_permission)],
 )
 
 

@@ -200,19 +200,19 @@ const menuEntries: MenuEntry[] = [
   },
   {
     type: 'item',
-    key: 'config',
-    path: '/config',
-    label: '配置',
-    minPermission: 'admin',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
-  },
-  {
-    type: 'item',
     key: 'tokens',
     path: '/tokens',
     label: '令牌管理',
     minPermission: 'operator',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+  },
+  {
+    type: 'item',
+    key: 'playground',
+    path: '/playground',
+    label: '操练场',
+    minPermission: 'operator',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
   },
   {
     type: 'item',
@@ -232,11 +232,35 @@ const menuEntries: MenuEntry[] = [
   },
   {
     type: 'item',
-    key: 'playground',
-    path: '/playground',
-    label: '操练场',
-    minPermission: 'operator',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    key: 'config',
+    path: '/config',
+    label: '配置',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+  },
+  {
+    type: 'item',
+    key: 'dev-logs',
+    path: '/dev/logs',
+    label: '实时日志',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="4 17 10 11 14 15 20 9"/><line x1="20" y1="9" x2="20" y2="15"/><line x1="20" y1="9" x2="14" y2="9"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>'
+  },
+  {
+    type: 'item',
+    key: 'dev-pipeline',
+    path: '/dev/pipeline',
+    label: '流水线',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="18" r="2"/><line x1="7" y1="11" x2="10" y2="7"/><line x1="14" y1="7" x2="17" y2="11"/><line x1="17" y1="13" x2="14" y2="17"/><line x1="10" y1="17" x2="7" y2="13"/></svg>'
+  },
+  {
+    type: 'item',
+    key: 'dev-test',
+    path: '/dev/test',
+    label: '测试面板',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="9 11 12 14 22 4"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
   },
   {
     type: 'separator',
@@ -249,27 +273,19 @@ const menuEntries: MenuEntry[] = [
   },
   {
     type: 'item',
-    key: 'dev-logs',
-    path: '/dev/logs',
-    label: '实时日志',
-    minPermission: 'operator',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="4 17 10 11 14 15 20 9"/><line x1="20" y1="9" x2="20" y2="15"/><line x1="20" y1="9" x2="14" y2="9"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>'
+    key: 'registration-server',
+    path: '/registration-server',
+    label: '注册服务器',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><line x1="7" y1="7" x2="7.01" y2="7"/><line x1="7" y1="17" x2="7.01" y2="17"/></svg>'
   },
   {
     type: 'item',
-    key: 'dev-pipeline',
-    path: '/dev/pipeline',
-    label: '流水线',
-    minPermission: 'operator',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="18" r="2"/><line x1="7" y1="11" x2="10" y2="7"/><line x1="14" y1="7" x2="17" y2="11"/><line x1="17" y1="13" x2="14" y2="17"/><line x1="10" y1="17" x2="7" y2="13"/></svg>'
-  },
-  {
-    type: 'item',
-    key: 'dev-test',
-    path: '/dev/test',
-    label: '测试面板',
-    minPermission: 'operator',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline stroke-linecap="round" stroke-linejoin="round" points="9 11 12 14 22 4"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
+    key: 'model-truth-probe',
+    path: '/model-truth-probe',
+    label: '模型真值探测',
+    minPermission: 'admin',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3h6l1 4h4l-1 4-3 3 1 7-5-3-5 3 1-7-3-3-1-4h4z"/></svg>'
   },
   {
     type: 'separator',
@@ -305,16 +321,23 @@ const sidebarWidth = computed(() => (collapsed.value ? '64px' : '208px'))
 const pageTitle = computed(() => (route.meta.title as string) ?? '仪表盘')
 const isActive = (path: string) => route.path === path
 const permissionLevels = { viewer: 1, operator: 2, admin: 3 } as const
+const devtoolsKeys = new Set(['dev-logs', 'dev-pipeline', 'dev-test', 'registration-server', 'model-truth-probe'])
 const visibleMenuEntries = computed(() => {
   const currentPermission = (authStore.permission || 'viewer') as 'viewer' | 'operator' | 'admin'
   const currentLevel = permissionLevels[currentPermission] ?? 1
-  return menuEntries.filter((entry) => {
-    if (entry.type !== 'item') {
-      return true
-    }
-    const requiredLevel = permissionLevels[entry.minPermission] ?? 1
-    return currentLevel >= requiredLevel
-  })
+  const visibleItems = menuEntries
+    .filter((entry): entry is MenuLinkItem => entry.type === 'item')
+    .filter((entry) => currentLevel >= (permissionLevels[entry.minPermission] ?? 1))
+
+  const normalItems = visibleItems.filter((entry) => !devtoolsKeys.has(entry.key))
+  const devItems = visibleItems.filter((entry) => devtoolsKeys.has(entry.key))
+  const merged: MenuEntry[] = [...normalItems]
+  if (devItems.length > 0) {
+    merged.push({ type: 'separator', key: 'devtools-separator-visible' })
+    merged.push({ type: 'label', key: 'devtools-label-visible', label: '开发工具' })
+    merged.push(...devItems)
+  }
+  return merged
 })
 
 function toggleSidebar() {

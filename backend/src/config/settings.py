@@ -39,6 +39,8 @@ class RegistrationSettings(BaseModel):
     """Registration automation behavior settings."""
 
     mode: Literal["browser", "http"] = "browser"
+    http_turnstile_token: str = ""
+    http_require_turnstile: bool = False
     skip_phone_verification: bool = True
     skip_upgrade_plus: bool = True
     profile_name: str = "API User"
@@ -68,6 +70,7 @@ class NetworkSettings(BaseModel):
 
     http_proxy: str = ""
     openai_proxy: str = ""
+    openai_proxy_pool: list[str] = []
     talentmail_proxy: str = ""
 
 

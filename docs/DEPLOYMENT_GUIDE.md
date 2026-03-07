@@ -120,6 +120,9 @@ registration:
   skip_phone_verification: true
   skip_upgrade_plus: true
   profile_name: API User
+  mode: browser                    # browser 或 http
+  http_turnstile_token: ''         # 纯 HTTP 注册验证码 token（可空）
+  http_require_turnstile: false    # true 时未配置 token 将直接失败
   max_concurrent_registrations: 1
 
 storage:
@@ -357,6 +360,15 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+> 可选：如果你使用 Caddy 而不是 Nginx（推荐云端使用 `codex.talenting.vip`），请直接运行：
+>
+> ```bash
+> cd /opt/register-bot
+> bash scripts/deploy_cloud_caddy.sh --domain codex.talenting.vip --email you@talenting.vip
+> ```
+>
+> 详细说明见 [CADDY 部署文档](./CADDY_DEPLOYMENT.md) 和 [Caddyfile 示例](./Caddyfile.codex.example)。
+
 ### 2.7 HTTPS (可选但推荐)
 
 ```bash
@@ -447,6 +459,36 @@ sudo systemctl restart codex2api
 
 # 不需要重启 Nginx (静态文件直接生效)
 ```
+
+---
+
+## 纯 HTTP 注册联调（云端推荐）
+
+1. 在 `backend/config/settings.yaml` 设置：
+```yaml
+registration:
+  mode: http
+  http_turnstile_token: ''
+  http_require_turnstile: false
+```
+
+2. 调试接口（管理员权限）：
+```bash
+curl -X POST http://127.0.0.1:8001/api/devtools/registration/http-test \
+  -H 'Authorization: Bearer <ADMIN_JWT>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "target": 3,
+    "max_failures": 3,
+    "delay_seconds": 2.0,
+    "turnstile_token": ""
+  }'
+```
+
+3. 验收建议：
+- 先跑 `target=3` 看错误分布
+- 再跑 `target=10` 看成功率和稳定性
+- 若大量出现风控错误，再引入真实 turnstile token 提供方
 
 ---
 

@@ -90,10 +90,14 @@ start_frontend() {
   echo "[frontend] starting on ${FRONTEND_HOST}:${FRONTEND_PORT} ..."
   (
     cd "${FRONTEND_DIR}"
-    nohup npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" >"${frontend_log}" 2>&1 &
+    nohup npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" --strictPort >"${frontend_log}" 2>&1 &
     echo $! >"${frontend_pid_file}"
   )
   sleep 1
+  if ! is_service_running "${frontend_pid_file}"; then
+    echo "[frontend] failed to start (see ${frontend_log})"
+    return 1
+  fi
   echo "[frontend] pid=$(read_pid "${frontend_pid_file}")"
 }
 
@@ -124,6 +128,18 @@ check_http() {
   local url="$2"
   if curl -fsS -m 3 "${url}" >/dev/null; then
     echo "[check] ${name}: OK (${url})"
+  else
+    echo "[check] ${name}: FAIL (${url})"
+  fi
+}
+
+check_http_reachable() {
+  local name="$1"
+  local url="$2"
+  local code
+  code="$(curl -sS -m 3 -o /dev/null -w "%{http_code}" "${url}" || true)"
+  if [[ -n "${code}" && "${code}" != "000" ]]; then
+    echo "[check] ${name}: OK (${url}, http=${code})"
   else
     echo "[check] ${name}: FAIL (${url})"
   fi
@@ -194,7 +210,7 @@ status() {
   done
   check_http "backend-docs" "http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
   check_http "frontend" "http://${FRONTEND_HOST}:${FRONTEND_PORT}"
-  check_http "chat2api" "http://${CHAT2API_HOST}:${CHAT2API_PORT}"
+  check_http_reachable "chat2api" "http://${CHAT2API_HOST}:${CHAT2API_PORT}"
 }
 
 up() {

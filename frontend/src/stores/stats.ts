@@ -11,6 +11,7 @@ export interface StatsSummary {
 export interface HourlyItem {
   hour: number
   requests: number
+  tokens: number
 }
 
 export interface DailyItem {
@@ -67,7 +68,8 @@ export const useStatsStore = defineStore('stats', () => {
       const raw = (item ?? {}) as Record<string, unknown>
       return {
         hour: normalizeNumber(raw.hour),
-        requests: normalizeNumber(raw.requests)
+        requests: normalizeNumber(raw.requests),
+        tokens: normalizeNumber(raw.tokens)
       }
     })
   }

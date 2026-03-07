@@ -41,19 +41,26 @@ class SubmitRegistrationStep(Step):
             timeout=settings.openai.timeout_seconds,
             proxy=settings.network.openai_proxy or settings.network.http_proxy,
         )
+        turnstile_token = str(getattr(settings.registration, "http_turnstile_token", "") or "").strip()
+        if not turnstile_token and bool(getattr(settings.registration, "http_require_turnstile", False)):
+            return StepResult(success=False, error="submit_registration_failed: missing registration.http_turnstile_token")
         try:
-            auth_data = await client.init_auth_session(settings.openai.auth_url)
+            auth_data = await client.init_auth_session(
+                settings.openai.auth_url,
+                str(getattr(settings.openai, "authorize_url", "") or ""),
+            )
             submit_result = await client.submit_registration(
                 email=context.email,
                 password=context.password,
                 csrf_token=str(auth_data["csrf_token"]),
-                turnstile_token="",
+                turnstile_token=turnstile_token,
             )
         except Exception as exc:  # noqa: BLE001
             return StepResult(success=False, error=f"submit_registration_failed: {exc}")
 
         if not submit_result.get("success", False):
-            return StepResult(success=False, error="submit_registration_failed: upstream rejected registration")
+            details = str(submit_result.get("error") or "upstream rejected registration")
+            return StepResult(success=False, error=f"submit_registration_failed: {details}")
 
         new_metadata = {
             **context.metadata,

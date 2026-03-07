@@ -1,0 +1,24 @@
+{
+  email admin@example.com
+}
+
+codex.example.com {
+  encode gzip zstd
+
+  root * /opt/register-bot/frontend/dist
+  file_server
+
+  @api path /api/*
+  reverse_proxy @api 127.0.0.1:8001
+
+  @v1 path /v1/*
+  reverse_proxy @v1 127.0.0.1:8001
+
+  @ws path /ws/*
+  reverse_proxy @ws 127.0.0.1:8001
+
+  # SPA fallback
+  try_files {path} /index.html
+}
+
+# 生产时将 codex.example.com 改为 codex.talenting.vip

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+import re
 from hashlib import sha256
 from collections.abc import AsyncIterator
 from typing import Any
@@ -38,6 +39,43 @@ class OpenAIRegistrationClient:
             kwargs["proxy"] = self.proxy
         return kwargs
 
+    def _json_or_text(self, response: httpx.Response) -> dict[str, Any]:
+        if not response.content:
+            return {}
+        try:
+            payload = response.json()
+        except ValueError:
+            return {"raw": response.text[:400]}
+        if isinstance(payload, dict):
+            return payload
+        return {"raw": str(payload)[:400]}
+
+    def _registration_headers(self) -> dict[str, str]:
+        # Keep headers close to browser traffic to reduce upstream anti-bot false negatives.
+        return {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://auth.openai.com",
+            "Referer": "https://auth.openai.com/",
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+        }
+
+    def _http_error_message(self, prefix: str, response: httpx.Response, body: dict[str, Any]) -> str:
+        nested_error = body.get("error")
+        if isinstance(nested_error, dict):
+            code = str(nested_error.get("code") or "")
+            message = str(nested_error.get("message") or "")
+            parts = [part for part in [code, message] if part]
+            if parts:
+                return f"{prefix}: HTTP {response.status_code} ({' | '.join(parts)})"
+        text = str(body.get("message") or body.get("error_description") or body.get("raw") or "").strip()
+        if text:
+            return f"{prefix}: HTTP {response.status_code} ({text})"
+        return f"{prefix}: HTTP {response.status_code}"
+
     def _pkce_pair(self) -> tuple[str, str]:
         raw = secrets.token_urlsafe(72)
         code_verifier = raw[:96]
@@ -45,7 +83,62 @@ class OpenAIRegistrationClient:
         challenge = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
         return code_verifier, challenge
 
-    async def init_auth_session(self, auth_url: str) -> dict[str, str]:
+    async def probe_authorize_challenge(self, auth_url: str, authorize_url: str = "") -> dict[str, Any]:
+        """Probe authorize endpoint and detect anti-bot challenge pages."""
+
+        base = auth_url.rstrip("/")
+        code_verifier, code_challenge = self._pkce_pair()
+        params = {
+            "client_id": self.oauth_client_id,
+            "response_type": "code",
+            "redirect_uri": "https://platform.openai.com/auth/callback",
+            "scope": "openid profile email offline_access",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "prompt": "signup",
+            "state": secrets.token_urlsafe(24),
+            "nonce": secrets.token_urlsafe(24),
+        }
+        clean_authorize_url = authorize_url.strip()
+        probe_url = clean_authorize_url or f"{base}/oauth/authorize"
+
+        async with httpx.AsyncClient(**self._client_kwargs(timeout=self.timeout)) as client:
+            response = await client.get(
+                probe_url,
+                params=params,
+                headers=self._registration_headers(),
+                follow_redirects=True,
+            )
+
+        text = response.text.lower()
+        markers = [
+            key
+            for key in [
+                "just a moment",
+                "cloudflare",
+                "challenge",
+                "captcha",
+                "turnstile",
+                "bot",
+                "access denied",
+                "forbidden",
+            ]
+            if key in text
+        ]
+        challenge_detected = bool(markers) or response.status_code >= 400
+        return {
+            "status_code": response.status_code,
+            "final_url": str(response.url),
+            "content_type": str(response.headers.get("content-type") or ""),
+            "challenge_detected": challenge_detected,
+            "markers": markers,
+            "body_snippet": response.text[:600],
+            "set_cookie_count": len(response.headers.get_list("set-cookie")),
+            "requested_url": probe_url,
+            "pkce_preview": code_verifier[:8],
+        }
+
+    async def init_auth_session(self, auth_url: str, authorize_url: str = "") -> dict[str, str]:
         base = auth_url.rstrip("/")
         code_verifier, code_challenge = self._pkce_pair()
         state = secrets.token_urlsafe(24)
@@ -61,19 +154,59 @@ class OpenAIRegistrationClient:
             "state": state,
             "nonce": nonce,
         }
+        candidate_urls: list[str] = []
+        clean_authorize_url = authorize_url.strip()
+        if clean_authorize_url:
+            candidate_urls.append(clean_authorize_url)
+        if base:
+            candidate_urls.append(f"{base}/oauth/authorize")
+            candidate_urls.append(f"{base}/authorize")
+        # de-duplicate while keeping order
+        candidate_urls = list(dict.fromkeys(candidate_urls))
+
+        response: httpx.Response | None = None
+        tried_errors: list[str] = []
         async with httpx.AsyncClient(**self._client_kwargs(timeout=self.timeout)) as client:
-            response = await client.get(f"{base}/authorize", params=params)
-        if response.status_code >= 400:
-            raise RuntimeError(f"init_auth_session_failed: HTTP {response.status_code}")
+            for url in candidate_urls:
+                resp = await client.get(
+                    url,
+                    params=params,
+                    headers=self._registration_headers(),
+                    follow_redirects=True,
+                )
+                if resp.status_code < 400:
+                    response = resp
+                    break
+                tried_errors.append(f"{url} -> HTTP {resp.status_code}")
+
+        if response is None:
+            detail = "; ".join(tried_errors) if tried_errors else "no authorize endpoint available"
+            raise RuntimeError(f"init_auth_session_failed: {detail}")
 
         csrf_token = ""
         login_hint = ""
-        header_cookie = response.headers.get("set-cookie", "")
-        for part in header_cookie.split(";"):
-            text = part.strip()
-            if text.startswith("csrf_token="):
-                csrf_token = text.split("=", 1)[1]
-                break
+
+        # 1) Try direct cookie jar on final response.
+        csrf_token = str(response.cookies.get("csrf_token") or "").strip()
+
+        # 2) Try cookie jars in redirect history.
+        if not csrf_token:
+            for hist in reversed(response.history):
+                csrf_token = str(hist.cookies.get("csrf_token") or "").strip()
+                if csrf_token:
+                    break
+
+        # 3) Parse Set-Cookie headers from final response.
+        if not csrf_token:
+            for header in response.headers.get_list("set-cookie"):
+                for part in header.split(";"):
+                    text = part.strip()
+                    if text.startswith("csrf_token="):
+                        csrf_token = text.split("=", 1)[1]
+                        break
+                if csrf_token:
+                    break
+
         if not csrf_token:
             parsed_url = urlparse(str(response.url))
             query = parse_qs(parsed_url.query)
@@ -82,18 +215,29 @@ class OpenAIRegistrationClient:
 
         if not csrf_token:
             body = response.text
-            marker = 'name="csrf_token"'
-            idx = body.find(marker)
-            if idx >= 0:
-                value_pos = body.find('value="', idx)
-                if value_pos >= 0:
-                    value_start = value_pos + len('value="')
-                    value_end = body.find('"', value_start)
-                    if value_end > value_start:
-                        csrf_token = body[value_start:value_end]
+            # Support common hidden-input variants.
+            patterns = [
+                r'name="csrf_token"\s+value="([^"]+)"',
+                r"name='csrf_token'\s+value='([^']+)'",
+                r'name="csrfToken"\s+value="([^"]+)"',
+                r'name="csrf-token"\s+value="([^"]+)"',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, body)
+                if match:
+                    csrf_token = match.group(1).strip()
+                    break
 
         if not csrf_token:
-            raise RuntimeError("init_auth_session_failed: csrf_token not found")
+            body_text = response.text.lower()
+            markers: list[str] = []
+            for item in ["captcha", "cloudflare", "turnstile", "forbidden", "access denied", "bot"]:
+                if item in body_text:
+                    markers.append(item)
+            marker_text = f" markers={','.join(markers)}" if markers else ""
+            raise RuntimeError(
+                f"init_auth_session_failed: csrf_token not found (url={response.url}{marker_text})"
+            )
 
         return {
             "csrf_token": csrf_token,
@@ -120,11 +264,9 @@ class OpenAIRegistrationClient:
         async with httpx.AsyncClient(**self._client_kwargs(timeout=self.timeout)) as client:
             response = await client.post(f"{base}/u/signup/identifier", headers=headers, json=payload)
 
+        data = self._json_or_text(response)
         if response.status_code >= 400:
-            raise RuntimeError(f"check_email_available_failed: HTTP {response.status_code}")
-        data = response.json() if response.content else {}
-        if not isinstance(data, dict):
-            raise RuntimeError("check_email_available_failed: invalid response body")
+            raise RuntimeError(self._http_error_message("check_email_available_failed", response, data))
 
         if "available" in data:
             return bool(data.get("available"))
@@ -147,18 +289,19 @@ class OpenAIRegistrationClient:
             "csrf_token": csrf_token,
             "turnstile_token": turnstile_token,
         }
-        headers = {"Content-Type": "application/json"}
+        headers = self._registration_headers()
         async with httpx.AsyncClient(**self._client_kwargs(timeout=self.timeout)) as client:
             response = await client.post(f"{base}/u/signup", headers=headers, json=payload)
 
+        data = self._json_or_text(response)
         if response.status_code >= 400:
-            raise RuntimeError(f"submit_registration_failed: HTTP {response.status_code}")
-        data = response.json() if response.content else {}
-        if not isinstance(data, dict):
-            raise RuntimeError("submit_registration_failed: invalid response body")
+            raise RuntimeError(self._http_error_message("submit_registration_failed", response, data))
+        if not data:
+            raise RuntimeError("submit_registration_failed: empty response body")
         return {
             "success": bool(data.get("success", True)),
             "requires_verification": bool(data.get("requires_verification", True)),
+            "error": str(data.get("error") or data.get("message") or ""),
         }
 
     async def verify_email(self, email: str, code: str, csrf_token: str, auth_url: str | None = None) -> dict[str, Any]:
@@ -168,15 +311,15 @@ class OpenAIRegistrationClient:
             "code": code,
             "csrf_token": csrf_token,
         }
-        headers = {"Content-Type": "application/json"}
+        headers = self._registration_headers()
         async with httpx.AsyncClient(**self._client_kwargs(timeout=self.timeout)) as client:
             response = await client.post(f"{base}/u/signup/verify", headers=headers, json=payload)
 
+        data = self._json_or_text(response)
         if response.status_code >= 400:
-            raise RuntimeError(f"verify_email_failed: HTTP {response.status_code}")
-        data = response.json() if response.content else {}
-        if not isinstance(data, dict):
-            raise RuntimeError("verify_email_failed: invalid response body")
+            raise RuntimeError(self._http_error_message("verify_email_failed", response, data))
+        if not data:
+            raise RuntimeError("verify_email_failed: empty response body")
         return {
             "verified": bool(data.get("verified", True)),
             "authorization_code": str(data.get("authorization_code", data.get("code", ""))),
